@@ -29,9 +29,15 @@ static const struct gates_data sun8i_a23_apb0_gates __initconst = {
 	.mask = {0x5D},
 };
 
+/* XXX This is an imcomplete mask due to a lack of documents */
+static const struct gates_data sun9i_a80_apbs_gates __initconst = {
+	.mask = {0x6007f},
+};
+
 static const struct of_device_id sun6i_a31_apb0_gates_clk_dt_ids[] = {
 	{ .compatible = "allwinner,sun6i-a31-apb0-gates-clk", .data = &sun6i_a31_apb0_gates },
 	{ .compatible = "allwinner,sun8i-a23-apb0-gates-clk", .data = &sun8i_a23_apb0_gates },
+	{ .compatible = "allwinner,sun9i-a80-apbs-gates-clk", .data = &sun9i_a80_apbs_gates },
 	{ /* sentinel */ }
 };
 
