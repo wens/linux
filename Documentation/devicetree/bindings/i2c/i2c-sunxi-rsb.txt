@@ -1,0 +1,50 @@
+
+* Allwinner RSB (Reduced Serial Bus) controller
+
+Required properties :
+
+ - reg             : Offset and length of the register set for the device.
+ - compatible      : Should be "allwinner,sun8i-a23-rsb".
+ - interrupts      : The interrupt line connected to the RSB peripheral.
+ - clocks          : The gate clk connected to the RSB peripheral.
+ - resets          : The reset line connected to the RSB peripheral.
+
+Optional properties :
+
+ - clock-frequency : Desired RSB bus clock frequency in Hz. If not set
+		     the default frequency is 100kHz. Maximum is 20MHz.
+
+An RSB device node may contain up to 15 child nodes each encoding an RSB
+slave device.
+
+Slave device properties:
+  Required properties:
+   - reg           : The runtime address used to access the device.
+   - allwinner,rsb-hw-addr : The RSB hardware address for the device. This
+			     is only used when configuring the runtime
+			     address of the device.
+
+  Valid runtime addresses - There are only 15 valid runtime addresses:
+
+      0x17, 0x2d, 0x3a, 0x4e, 0x59, 0x63, 0x74, 0x8b,
+      0x9c, 0xa6, 0xb1, 0xc5, 0xd2, 0xe8, 0xff
+
+
+Example:
+
+	rsb@01f03400 {
+		compatible = "allwinner,sun8i-a23-rsb";
+		reg = <0x01f03400 0x400>;
+		interrupts = <0 39 4>;
+		clocks = <&apb0_gates 3>;
+		clock-frequency = <3000000>;
+		resets = <&apb0_rst 3>;
+
+		axp223: pmic@2d {
+			compatible = "x-powers,axp223", "x-powers,axp221";
+			reg = <0x2d>;
+			allwinner,rsb-hw-addr = <0x3e3>;
+
+			/* ... */
+		};
+	};
