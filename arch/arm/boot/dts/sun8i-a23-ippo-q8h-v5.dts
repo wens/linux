@@ -130,5 +130,9 @@
 			pinctrl-0 = <&r_uart_pins_a>;
 			status = "okay";
 		};
+
+		r_rsb: i2c@01f03400 {
+			status = "okay";
+		};
 	};
 };
