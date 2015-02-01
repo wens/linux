@@ -180,6 +180,15 @@
 	status = "okay";
 };
 
+&r_uart {
+	status = "okay";
+};
+
+&r_uart_pins {
+	/* Enable internal pull-up */
+	allwinner,pull = <SUN4I_PINCTRL_PULL_UP>;
+};
+
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_pins_a>;
