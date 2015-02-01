@@ -798,6 +798,8 @@
 			compatible = "snps,dw-apb-uart";
 			reg = <0x08002800 0x400>;
 			interrupts = <GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&r_uart_pins>;
 			reg-shift = <2>;
 			reg-io-width = <4>;
 			clocks = <&apbs_gates 4>;
@@ -817,6 +819,13 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			#gpio-cells = <3>;
+
+			r_uart_pins: r_uart {
+				allwinner,pins = "PL0", "PL1";
+				allwinner,function = "s_uart";
+				allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+				allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
+			};
 		};
 	};
 };
