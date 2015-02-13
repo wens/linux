@@ -183,6 +183,10 @@
 	status = "okay";
 };
 
+&r_ir {
+	status = "okay";
+};
+
 &r_uart {
 	status = "okay";
 };
