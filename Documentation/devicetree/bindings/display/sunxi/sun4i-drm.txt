@@ -31,13 +31,15 @@ Required properties:
    * allwinner,sun6i-a31-tcon
    * allwinner,sun6i-a31s-tcon
    * allwinner,sun8i-a33-tcon
+   * allwinner,sun9i-a80-tcon0
+   * allwinner,sun9i-a80-tcon1
  - reg: base address and size of memory-mapped region
  - interrupts: interrupt associated to this IP
  - clocks: phandles to the clocks feeding the TCON. Three are needed:
    - 'ahb': the interface clocks
-   - 'tcon-ch0': The clock driving the TCON channel 0
  - resets: phandles to the reset controllers driving the encoder
-   - "lcd": the reset line for the TCON channel 0
+   - "lcd": the reset line for the TCON
+   - "edp": the reset line for the eDP block (A80 only)
 
  - clock-names: the clock names mentioned above
  - reset-names: the reset names mentioned above
@@ -52,7 +54,9 @@ Required properties:
   second the block connected to the TCON channel 1 (usually the TV
   encoder)
 
-On SoCs other than the A33, there is one more clock required:
+For TCONs with channel 0, there is one more clock required:
+   - 'tcon-ch0': The clock driving the TCON channel 0
+For TCONs with channel 1, there is one more clock required:
    - 'tcon-ch1': The clock driving the TCON channel 1
 
 DRC
