@@ -229,6 +229,12 @@
 		};
 	};
 
+	de: display-engine {
+		compatible = "allwinner,sun9i-a80-display-engine";
+		allwinner,pipelines = <&fe0>;
+		status = "disabled";
+	};
+
 	soc {
 		compatible = "simple-bus";
 		#address-cells = <1>;
@@ -448,6 +454,181 @@
 			resets = <&ccu RST_BUS_DE>;
 			#clock-cells = <1>;
 			#reset-cells = <1>;
+		};
+
+		fe0: display-frontend@03100000 {
+			compatible = "allwinner,sun9i-a80-display-frontend";
+			reg = <0x03100000 0x40000>;
+			interrupts = <GIC_SPI 93 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&de_clocks CLK_BUS_FE0>, <&de_clocks CLK_FE0>,
+				 <&de_clocks CLK_DRAM_FE0>;
+			clock-names = "ahb", "mod",
+				      "ram";
+			resets = <&de_clocks RST_FE0>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				fe0_out: port@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <1>;
+
+					fe0_out_deu0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&deu0_in_fe0>;
+					};
+				};
+			};
+		};
+
+		be0: display-backend@03200000 {
+			compatible = "allwinner,sun9i-a80-display-backend";
+			reg = <0x03200000 0x40000>;
+			interrupts = <GIC_SPI 95 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&de_clocks CLK_BUS_BE0>, <&de_clocks CLK_BE0>,
+				 <&de_clocks CLK_DRAM_BE0>;
+			clock-names = "ahb", "mod",
+				      "ram";
+			resets = <&de_clocks RST_BE0>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				be0_in: port@0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0>;
+
+					be0_in_deu0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&deu0_out_be0>;
+					};
+				};
+
+				be0_out: port@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <1>;
+
+					be0_out_drc0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&drc0_in_be0>;
+					};
+				};
+			};
+		};
+
+		deu0: deu@03300000 {
+			compatible = "allwinner,sun9i-a80-deu";
+			reg = <0x03300000 0x40000>;
+			interrupts = <GIC_SPI 92 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&de_clocks CLK_BUS_DEU0>, <&de_clocks CLK_IEP_DEU0>,
+				 <&de_clocks CLK_DRAM_DEU0>;
+			clock-names = "ahb", "mod",
+				      "ram";
+			resets = <&de_clocks RST_DEU0>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				deu0_in: port@0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0>;
+
+					deu0_in_fe0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&fe0_out_deu0>;
+					};
+				};
+
+				deu0_out: port@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <1>;
+
+					deu0_out_be0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&be0_in_deu0>;
+					};
+				};
+			};
+		};
+
+		drc0: drc@03400000 {
+			compatible = "allwinner,sun9i-a80-drc";
+			reg = <0x03400000 0x40000>;
+			interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&de_clocks CLK_BUS_DRC0>, <&de_clocks CLK_IEP_DRC0>,
+				 <&de_clocks CLK_DRAM_DRC0>;
+			clock-names = "ahb", "mod",
+				      "ram";
+			resets = <&de_clocks RST_DRC0>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				drc0_in: port@0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0>;
+
+					drc0_in_be0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&be0_out_drc0>;
+					};
+				};
+
+				drc0_out: port@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <1>;
+
+					drc0_out_tcon0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&tcon0_in_drc0>;
+					};
+				};
+			};
+		};
+
+		tcon0: lcd-controller@03c00000 {
+			compatible = "allwinner,sun9i-a80-tcon0";
+			reg = <0x03c00000 0x10000>;
+			interrupts = <GIC_SPI 86 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_LCD0>, <&ccu CLK_LCD0>;
+			clock-names = "ahb", "tcon-ch0";
+			resets = <&ccu RST_BUS_LCD0>, <&ccu RST_BUS_EDP>;
+			reset-names = "lcd", "edp";
+			clock-output-names = "tcon0-pixel-clock";
+			status = "disabled";
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				tcon0_in: port@0 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <0>;
+
+					tcon0_in_drc0: endpoint@0 {
+						reg = <0>;
+						remote-endpoint = <&drc0_out_tcon0>;
+					};
+				};
+
+				tcon0_out: port@1 {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					reg = <1>;
+				};
+			};
 		};
 
 		ccu: clock@06000000 {
