@@ -63,7 +63,7 @@ DRC
 ---
 
 The DRC (Dynamic Range Controller), found in the latest Allwinner SoCs
-(A31, A23, A33), allows to dynamically adjust pixel
+(A31, A23, A33, A80), allows to dynamically adjust pixel
 brightness/contrast based on histogram measurements for LCD content
 adaptive backlight control.
 
@@ -73,6 +73,7 @@ Required properties:
     * allwinner,sun6i-a31-drc
     * allwinner,sun6i-a31s-drc
     * allwinner,sun8i-a33-drc
+    * allwinner,sun9i-a80-drc
   - reg: base address and size of the memory-mapped region.
   - interrupts: interrupt associated to this IP
   - clocks: phandles to the clocks feeding the DRC
@@ -97,6 +98,7 @@ Required properties:
     * allwinner,sun5i-a13-display-backend
     * allwinner,sun6i-a31-display-backend
     * allwinner,sun8i-a33-display-backend
+    * allwinner,sun9i-a80-display-backend
   - reg: base address and size of the memory-mapped region.
   - clocks: phandles to the clocks feeding the frontend and backend
     * ahb: the backend interface clock
@@ -150,6 +152,7 @@ Required properties:
     * allwinner,sun5i-a13-display-frontend
     * allwinner,sun6i-a31-display-frontend
     * allwinner,sun8i-a33-display-frontend
+    * allwinner,sun9i-a80-display-frontend
   - reg: base address and size of the memory-mapped region.
   - interrupts: interrupt associated to this IP
   - clocks: phandles to the clocks feeding the frontend and backend
@@ -177,6 +180,7 @@ Required properties:
     * allwinner,sun6i-a31-display-engine
     * allwinner,sun6i-a31s-display-engine
     * allwinner,sun8i-a33-display-engine
+    * allwinner,sun9i-a80-display-engine
 
   - allwinner,pipelines: list of phandle to the display engine
     frontends available.
