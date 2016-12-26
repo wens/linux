@@ -57,6 +57,7 @@ void sun4i_tcon_channel_disable(struct sun4i_tcon *tcon, int channel)
 {
 	/* Disable the TCON's channel */
 	if (channel == 0) {
+		WARN_ON(!tcon->quirks->has_channel_0);
 		regmap_update_bits(tcon->regs, SUN4I_TCON0_CTL_REG,
 				   SUN4I_TCON0_CTL_TCON_ENABLE, 0);
 		clk_disable_unprepare(tcon->dclk);
@@ -74,6 +75,7 @@ void sun4i_tcon_channel_enable(struct sun4i_tcon *tcon, int channel)
 {
 	/* Enable the TCON's channel */
 	if (channel == 0) {
+		WARN_ON(!tcon->quirks->has_channel_0);
 		regmap_update_bits(tcon->regs, SUN4I_TCON0_CTL_REG,
 				   SUN4I_TCON0_CTL_TCON_ENABLE,
 				   SUN4I_TCON0_CTL_TCON_ENABLE);
@@ -129,6 +131,8 @@ void sun4i_tcon0_mode_set(struct sun4i_tcon *tcon,
 	unsigned int bp, hsync, vsync;
 	u8 clk_delay;
 	u32 val = 0;
+
+	WARN_ON(!tcon->quirks->has_channel_0);
 
 	/* Adjust clock delay */
 	clk_delay = sun4i_tcon_get_clk_delay(mode, 0);
@@ -322,10 +326,12 @@ static int sun4i_tcon_init_clocks(struct device *dev,
 	}
 	clk_prepare_enable(tcon->clk);
 
-	tcon->sclk0 = devm_clk_get(dev, "tcon-ch0");
-	if (IS_ERR(tcon->sclk0)) {
-		dev_err(dev, "Couldn't get the TCON channel 0 clock\n");
-		return PTR_ERR(tcon->sclk0);
+	if (tcon->quirks->has_channel_0) {
+		tcon->sclk0 = devm_clk_get(dev, "tcon-ch0");
+		if (IS_ERR(tcon->sclk0)) {
+			dev_err(dev, "Couldn't get the TCON channel 0 clock\n");
+			return PTR_ERR(tcon->sclk0);
+		}
 	}
 
 	if (tcon->quirks->has_channel_1) {
@@ -517,10 +523,12 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 		goto err_free_clocks;
 	}
 
-	ret = sun4i_dclk_create(dev, tcon);
-	if (ret) {
-		dev_err(dev, "Couldn't create our TCON dot clock\n");
-		goto err_free_clocks;
+	if (tcon->quirks->has_channel_0) {
+		ret = sun4i_dclk_create(dev, tcon);
+		if (ret) {
+			dev_err(dev, "Couldn't create our TCON dot clock\n");
+			goto err_free_clocks;
+		}
 	}
 
 	ret = sun4i_tcon_init_irq(dev, tcon);
@@ -529,14 +537,17 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 		goto err_free_dotclock;
 	}
 
-	ret = sun4i_rgb_init(drm);
-	if (ret < 0)
-		goto err_free_clocks;
+	if (tcon->quirks->has_channel_0) {
+		ret = sun4i_rgb_init(drm);
+		if (ret < 0)
+			goto err_free_clocks;
+	}
 
 	return 0;
 
 err_free_dotclock:
-	sun4i_dclk_free(tcon);
+	if (tcon->quirks->has_channel_0)
+		sun4i_dclk_free(tcon);
 err_free_clocks:
 	sun4i_tcon_free_clocks(tcon);
 err_assert_reset:
@@ -549,7 +560,8 @@ static void sun4i_tcon_unbind(struct device *dev, struct device *master,
 {
 	struct sun4i_tcon *tcon = dev_get_drvdata(dev);
 
-	sun4i_dclk_free(tcon);
+	if (tcon->quirks->has_channel_0)
+		sun4i_dclk_free(tcon);
 	sun4i_tcon_free_clocks(tcon);
 }
 
@@ -561,8 +573,17 @@ static const struct component_ops sun4i_tcon_ops = {
 static int sun4i_tcon_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
+	const struct sun4i_tcon_quirks *quirks;
 	struct drm_bridge *bridge;
 	struct drm_panel *panel;
+
+	/*
+	 * We don't need to check for panels or bridges if we don't have
+	 * a panel output.
+	 */
+	quirks = of_device_get_match_data(&pdev->dev);
+	if (quirks->has_channel_0)
+		return component_add(&pdev->dev, &sun4i_tcon_ops);
 
 	/*
 	 * Neither the bridge or the panel is ready.
@@ -591,20 +612,23 @@ static int sun4i_tcon_remove(struct platform_device *pdev)
 }
 
 static const struct sun4i_tcon_quirks sun5i_a13_quirks = {
-	.has_unknown_mux = true,
+	.has_channel_0	= true,
 	.has_channel_1	= true,
+	.has_unknown_mux = true,
 };
 
 static const struct sun4i_tcon_quirks sun6i_a31_quirks = {
+	.has_channel_0	= true,
 	.has_channel_1	= true,
 };
 
 static const struct sun4i_tcon_quirks sun6i_a31s_quirks = {
+	.has_channel_0	= true,
 	.has_channel_1	= true,
 };
 
 static const struct sun4i_tcon_quirks sun8i_a33_quirks = {
-	/* nothing is supported */
+	.has_channel_0	= true,
 };
 
 static const struct of_device_id sun4i_tcon_of_table[] = {

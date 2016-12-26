@@ -143,8 +143,9 @@
 #define SUN4I_TCON_MAX_CHANNELS		2
 
 struct sun4i_tcon_quirks {
-	bool	has_unknown_mux; /* sun5i has undocumented mux */
+	bool	has_channel_0;	/* a80 has 1 channel per tcon */
 	bool	has_channel_1;	/* a33 does not have channel 1 */
+	bool	has_unknown_mux; /* sun5i has undocumented mux */
 };
 
 struct sun4i_tcon {
