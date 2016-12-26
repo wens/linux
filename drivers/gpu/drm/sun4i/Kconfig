@@ -12,3 +12,11 @@ config DRM_SUN4I
 	  Choose this option if you have an Allwinner SoC with a
 	  Display Engine. If M is selected the module will be called
 	  sun4i-drm.
+
+config DW_HDMI_SUNXI
+	tristate "Allwinner specific extensions for Synopsys DW HDMI"
+	depends on DRM_SUN4I
+	select DRM_DW_HDMI
+	help
+	  This selects support for Allwinner SoC specific extensions
+	  for the Synopsys DesignWare HDMI driver.
