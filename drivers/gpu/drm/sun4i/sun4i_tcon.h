@@ -146,6 +146,7 @@ struct sun4i_tcon_quirks {
 	bool	has_channel_0;	/* a80 has 1 channel per tcon */
 	bool	has_channel_1;	/* a33 does not have channel 1 */
 	bool	has_unknown_mux; /* sun5i has undocumented mux */
+	bool	needs_edp_reset; /* a80 edp reset needed for tcon0 access */
 };
 
 struct sun4i_tcon {

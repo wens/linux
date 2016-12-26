@@ -484,6 +484,7 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 	struct drm_device *drm = data;
 	struct sun4i_drv *drv = drm->dev_private;
 	struct sun4i_tcon *tcon;
+	struct reset_control *edp_rstc;
 	int ret;
 
 	tcon = devm_kzalloc(dev, sizeof(*tcon), GFP_KERNEL);
@@ -494,6 +495,20 @@ static int sun4i_tcon_bind(struct device *dev, struct device *master,
 	tcon->drm = drm;
 	tcon->dev = dev;
 	tcon->quirks = of_device_get_match_data(dev);
+
+	if (tcon->quirks->needs_edp_reset) {
+		edp_rstc = devm_reset_control_get_shared(dev, "edp");
+		if (IS_ERR(edp_rstc)) {
+			dev_err(dev, "Couldn't get edp reset line\n");
+			return PTR_ERR(edp_rstc);
+		}
+
+		ret = reset_control_deassert(edp_rstc);
+		if (ret) {
+			dev_err(dev, "Couldn't deassert edp reset line\n");
+			return ret;
+		}
+	}
 
 	tcon->lcd_rst = devm_reset_control_get(dev, "lcd");
 	if (IS_ERR(tcon->lcd_rst)) {
@@ -631,11 +646,23 @@ static const struct sun4i_tcon_quirks sun8i_a33_quirks = {
 	.has_channel_0	= true,
 };
 
+static const struct sun4i_tcon_quirks sun9i_a80_tcon0_quirks = {
+	.has_channel_0	= true,
+	.needs_edp_reset = true,
+};
+
+static const struct sun4i_tcon_quirks sun9i_a80_tcon1_quirks = {
+	.has_channel_1	= true,
+	.needs_edp_reset = true,
+};
+
 static const struct of_device_id sun4i_tcon_of_table[] = {
 	{ .compatible = "allwinner,sun5i-a13-tcon", .data = &sun5i_a13_quirks },
 	{ .compatible = "allwinner,sun6i-a31-tcon", .data = &sun6i_a31_quirks },
 	{ .compatible = "allwinner,sun6i-a31s-tcon", .data = &sun6i_a31s_quirks },
 	{ .compatible = "allwinner,sun8i-a33-tcon", .data = &sun8i_a33_quirks },
+	{ .compatible = "allwinner,sun9i-a80-tcon0", .data = &sun9i_a80_tcon0_quirks },
+	{ .compatible = "allwinner,sun9i-a80-tcon1", .data = &sun9i_a80_tcon1_quirks },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, sun4i_tcon_of_table);
