@@ -201,7 +201,13 @@ static bool sun4i_drv_node_is_frontend(struct device_node *node)
 {
 	return of_device_is_compatible(node, "allwinner,sun5i-a13-display-frontend") ||
 		of_device_is_compatible(node, "allwinner,sun6i-a31-display-frontend") ||
-		of_device_is_compatible(node, "allwinner,sun8i-a33-display-frontend");
+		of_device_is_compatible(node, "allwinner,sun8i-a33-display-frontend") ||
+		of_device_is_compatible(node, "allwinner,sun9i-a80-display-frontend");
+}
+
+static bool sun4i_drv_node_is_deu(struct device_node *node)
+{
+	return of_device_is_compatible(node, "allwinner,sun9i-a80-deu");
 }
 
 static bool sun4i_drv_node_is_tcon(struct device_node *node)
@@ -209,7 +215,9 @@ static bool sun4i_drv_node_is_tcon(struct device_node *node)
 	return of_device_is_compatible(node, "allwinner,sun5i-a13-tcon") ||
 		of_device_is_compatible(node, "allwinner,sun6i-a31-tcon") ||
 		of_device_is_compatible(node, "allwinner,sun6i-a31s-tcon") ||
-		of_device_is_compatible(node, "allwinner,sun8i-a33-tcon");
+		of_device_is_compatible(node, "allwinner,sun8i-a33-tcon") ||
+		of_device_is_compatible(node, "allwinner,sun9i-a80-tcon0") ||
+		of_device_is_compatible(node, "allwinner,sun9i-a80-tcon1");
 }
 
 static int compare_of(struct device *dev, void *data)
@@ -237,7 +245,8 @@ static int sun4i_drv_add_endpoints(struct device *dev,
 	    !of_device_is_available(node))
 		return 0;
 
-	if (!sun4i_drv_node_is_frontend(node)) {
+	if (!sun4i_drv_node_is_frontend(node) &&
+	    !sun4i_drv_node_is_deu(node)) {
 		/* Add current component */
 		DRM_DEBUG_DRIVER("Adding component %s\n",
 				 of_node_full_name(node));
@@ -327,6 +336,7 @@ static const struct of_device_id sun4i_drv_of_table[] = {
 	{ .compatible = "allwinner,sun6i-a31-display-engine" },
 	{ .compatible = "allwinner,sun6i-a31s-display-engine" },
 	{ .compatible = "allwinner,sun8i-a33-display-engine" },
+	{ .compatible = "allwinner,sun9i-a80-display-engine" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, sun4i_drv_of_table);
