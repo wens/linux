@@ -114,6 +114,10 @@
 	};
 };
 
+&de {
+	status = "okay";
+};
+
 &ehci0 {
 	status = "okay";
 };
@@ -124,6 +128,12 @@
 };
 
 &ehci2 {
+	status = "okay";
+};
+
+&hdmi {
+	pinctrl-names = "default";
+	pinctrl-0 = <&hdmi_cec_pins>, <&hdmi_ddc_pins>;
 	status = "okay";
 };
 
@@ -489,6 +499,10 @@
 };
 
 #include "axp809.dtsi"
+
+&tcon1 {
+	status = "okay";
+};
 
 &uart0 {
 	pinctrl-names = "default";
