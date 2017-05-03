@@ -45,6 +45,7 @@
 #include <asm/cputype.h>
 #include <asm/irq.h>
 #include <asm/exception.h>
+#include <asm/psci.h>
 #include <asm/smp_plat.h>
 #include <asm/virt.h>
 
@@ -89,6 +90,7 @@ struct gic_chip_data {
 #ifdef CONFIG_GIC_NON_BANKED
 	void __iomem *(*get_base)(union gic_base *);
 #endif
+	bool use_aliased_nonsecure;
 };
 
 #ifdef CONFIG_BL_SWITCHER
@@ -176,6 +178,11 @@ static inline unsigned int gic_irq(struct irq_data *d)
 	return d->hwirq;
 }
 
+static inline bool gic_use_aliased_nonsecure(struct gic_chip_data *gic_data)
+{
+	return gic_data->use_aliased_nonsecure;
+}
+
 static inline bool cascading_gic_irq(struct irq_data *d)
 {
 	void *data = irq_data_get_irq_handler_data(d);
@@ -229,7 +236,13 @@ static void gic_unmask_irq(struct irq_data *d)
 
 static void gic_eoi_irq(struct irq_data *d)
 {
-	writel_relaxed(gic_irq(d), gic_cpu_base(d) + GIC_CPU_EOI);
+	struct gic_chip_data *gic_data = irq_data_get_irq_chip_data(d);
+	unsigned int eoi_reg = GIC_CPU_EOI;
+
+	if (gic_use_aliased_nonsecure(gic_data))
+		eoi_reg = GIC_CPU_AEOI;
+
+	writel_relaxed(gic_irq(d), gic_cpu_base(d) + eoi_reg);
 }
 
 static void gic_eoimode1_eoi_irq(struct irq_data *d)
@@ -353,19 +366,26 @@ static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 	u32 irqstat, irqnr;
 	struct gic_chip_data *gic = &gic_data[0];
 	void __iomem *cpu_base = gic_data_cpu_base(gic);
+	unsigned int eoi_reg = GIC_CPU_EOI;
+	unsigned int ack_reg = GIC_CPU_INTACK;
+
+	if (gic_use_aliased_nonsecure(gic)) {
+		eoi_reg = GIC_CPU_AEOI;
+		ack_reg = GIC_CPU_AINTACK;
+	}
 
 	do {
-		irqstat = readl_relaxed(cpu_base + GIC_CPU_INTACK);
+		irqstat = readl_relaxed(cpu_base + ack_reg);
 		irqnr = irqstat & GICC_IAR_INT_ID_MASK;
 
 		if (likely(irqnr > 15 && irqnr < 1020)) {
 			if (static_key_true(&supports_deactivate))
-				writel_relaxed(irqstat, cpu_base + GIC_CPU_EOI);
+				writel_relaxed(irqstat, cpu_base + eoi_reg);
 			handle_domain_irq(gic->domain, irqnr, regs);
 			continue;
 		}
 		if (irqnr < 16) {
-			writel_relaxed(irqstat, cpu_base + GIC_CPU_EOI);
+			writel_relaxed(irqstat, cpu_base + eoi_reg);
 			if (static_key_true(&supports_deactivate))
 				writel_relaxed(irqstat, cpu_base + GIC_CPU_DEACTIVATE);
 #ifdef CONFIG_SMP
@@ -391,10 +411,14 @@ static void gic_handle_cascade_irq(struct irq_desc *desc)
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	unsigned int cascade_irq, gic_irq;
 	unsigned long status;
+	unsigned int ack_reg = GIC_CPU_INTACK;
+
+	if (gic_use_aliased_nonsecure(chip_data))
+		ack_reg = GIC_CPU_AINTACK;
 
 	chained_irq_enter(chip, desc);
 
-	status = readl_relaxed(gic_data_cpu_base(chip_data) + GIC_CPU_INTACK);
+	status = readl_relaxed(gic_data_cpu_base(chip_data) + ack_reg);
 
 	gic_irq = (status & GICC_IAR_INT_ID_MASK);
 	if (gic_irq == GICC_INT_SPURIOUS)
@@ -453,9 +477,17 @@ static void gic_cpu_if_up(struct gic_chip_data *gic)
 	void __iomem *cpu_base = gic_data_cpu_base(gic);
 	u32 bypass = 0;
 	u32 mode = 0;
+	u32 enable = GICC_ENABLE;
 
-	if (gic == &gic_data[0] && static_key_true(&supports_deactivate))
+	if (gic == &gic_data[0] && static_key_true(&supports_deactivate)) {
 		mode = GIC_CPU_CTRL_EOImodeNS;
+
+		if (gic_use_aliased_nonsecure(gic))
+			mode |= GIC_CPU_CTRL_EOImodeNS_ALIAS;
+	}
+
+	if (gic_use_aliased_nonsecure(gic))
+		enable |= GICC_ENABLE_ALIAS;
 
 	/*
 	* Preserve bypass disable bits to be written back later
@@ -463,7 +495,7 @@ static void gic_cpu_if_up(struct gic_chip_data *gic)
 	bypass = readl(cpu_base + GIC_CPU_CTRL);
 	bypass &= GICC_DIS_BYPASS_MASK;
 
-	writel_relaxed(bypass | mode | GICC_ENABLE, cpu_base + GIC_CPU_CTRL);
+	writel_relaxed(bypass | mode | enable, cpu_base + GIC_CPU_CTRL);
 }
 
 
@@ -473,6 +505,7 @@ static void gic_dist_init(struct gic_chip_data *gic)
 	u32 cpumask;
 	unsigned int gic_irqs = gic->gic_irqs;
 	void __iomem *base = gic_data_dist_base(gic);
+	u32 enable = GICD_ENABLE;
 
 	writel_relaxed(GICD_DISABLE, base + GIC_DIST_CTRL);
 
@@ -487,7 +520,10 @@ static void gic_dist_init(struct gic_chip_data *gic)
 
 	gic_dist_config(base, gic_irqs, NULL);
 
-	writel_relaxed(GICD_ENABLE, base + GIC_DIST_CTRL);
+	if (gic_use_aliased_nonsecure(gic))
+		enable |= GICD_ENABLE_ALIAS;
+
+	writel_relaxed(enable, base + GIC_DIST_CTRL);
 }
 
 static int gic_cpu_init(struct gic_chip_data *gic)
@@ -541,6 +577,8 @@ int gic_cpu_if_down(unsigned int gic_nr)
 	cpu_base = gic_data_cpu_base(&gic_data[gic_nr]);
 	val = readl(cpu_base + GIC_CPU_CTRL);
 	val &= ~GICC_ENABLE;
+	if (gic_use_aliased_nonsecure(&gic_data[gic_nr]))
+		val &= ~GICC_ENABLE_ALIAS;
 	writel_relaxed(val, cpu_base + GIC_CPU_CTRL);
 
 	return 0;
@@ -597,6 +635,7 @@ void gic_dist_restore(struct gic_chip_data *gic)
 	unsigned int gic_irqs;
 	unsigned int i;
 	void __iomem *dist_base;
+	unsigned int enable = GICD_ENABLE;
 
 	if (WARN_ON(!gic))
 		return;
@@ -635,7 +674,10 @@ void gic_dist_restore(struct gic_chip_data *gic)
 			dist_base + GIC_DIST_ACTIVE_SET + i * 4);
 	}
 
-	writel_relaxed(GICD_ENABLE, dist_base + GIC_DIST_CTRL);
+	if (gic_use_aliased_nonsecure(gic))
+		enable |= GICD_ENABLE_ALIAS;
+
+	writel_relaxed(enable, dist_base + GIC_DIST_CTRL);
 }
 
 void gic_cpu_save(struct gic_chip_data *gic)
@@ -785,11 +827,14 @@ static int gic_pm_init(struct gic_chip_data *gic)
 static void gic_raise_softirq(const struct cpumask *mask, unsigned int irq)
 {
 	int cpu;
-	unsigned long flags, map = 0;
+	unsigned long flags, map = 0, nsatt = 0;
+
+	if (gic_use_aliased_nonsecure(&gic_data[0]))
+		nsatt = BIT(15);
 
 	if (unlikely(nr_cpu_ids == 1)) {
 		/* Only one CPU? let's do a self-IPI... */
-		writel_relaxed(2 << 24 | irq,
+		writel_relaxed(2 << 24 | nsatt | irq,
 			       gic_data_dist_base(&gic_data[0]) + GIC_DIST_SOFTINT);
 		return;
 	}
@@ -807,7 +852,8 @@ static void gic_raise_softirq(const struct cpumask *mask, unsigned int irq)
 	dmb(ishst);
 
 	/* this always happens on GIC0 */
-	writel_relaxed(map << 16 | irq, gic_data_dist_base(&gic_data[0]) + GIC_DIST_SOFTINT);
+	writel_relaxed(map << 16 | nsatt | irq,
+		       gic_data_dist_base(&gic_data[0]) + GIC_DIST_SOFTINT);
 
 	gic_unlock_irqrestore(flags);
 }
@@ -1256,6 +1302,8 @@ static bool gic_check_eoimode(struct device_node *node, void __iomem **base)
 
 	if (!is_hyp_mode_available())
 		return false;
+	if (of_property_read_bool(node, "arm,always-secure"))
+		return false;
 	if (resource_size(&cpuif_res) < SZ_8K)
 		return false;
 	if (resource_size(&cpuif_res) == SZ_128K) {
@@ -1301,6 +1349,11 @@ static int gic_of_setup(struct gic_chip_data *gic, struct device_node *node)
 
 	if (of_property_read_u32(node, "cpu-offset", &gic->percpu_offset))
 		gic->percpu_offset = 0;
+
+	if (of_property_read_bool(node, "arm,always-secure")) {
+		/* We are in non-secure mode if HYP is available */
+		gic->use_aliased_nonsecure = !!is_hyp_mode_available();
+	}
 
 	return 0;
 

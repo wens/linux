@@ -17,15 +17,19 @@
 #define GIC_CPU_EOI			0x10
 #define GIC_CPU_RUNNINGPRI		0x14
 #define GIC_CPU_HIGHPRI			0x18
-#define GIC_CPU_ALIAS_BINPOINT		0x1c
+#define GIC_CPU_ABINPOINT		0x1c
+#define GIC_CPU_AINTACK			0x20
+#define GIC_CPU_AEOI			0x24
 #define GIC_CPU_ACTIVEPRIO		0xd0
 #define GIC_CPU_IDENT			0xfc
 #define GIC_CPU_DEACTIVATE		0x1000
 
 #define GICC_ENABLE			0x1
+#define GICC_ENABLE_ALIAS		0x2
 #define GICC_INT_PRI_THRESHOLD		0xf0
 
 #define GIC_CPU_CTRL_EOImodeNS		(1 << 9)
+#define GIC_CPU_CTRL_EOImodeNS_ALIAS	(1 << 10)
 
 #define GICC_IAR_INT_ID_MASK		0x3ff
 #define GICC_INT_SPURIOUS		1023
@@ -49,6 +53,7 @@
 #define GIC_DIST_SGI_PENDING_SET	0xf20
 
 #define GICD_ENABLE			0x1
+#define GICD_ENABLE_ALIAS		0x2
 #define GICD_DISABLE			0x0
 #define GICD_INT_ACTLOW_LVLTRIG		0x0
 #define GICD_INT_EN_CLR_X32		0xffffffff
