@@ -80,6 +80,16 @@
 /* Bridge Status values */
 #define	MV64XXX_I2C_BRIDGE_STATUS_ERROR			BIT(0)
 
+/* Line Control Register (Allwinner only) */
+#define SUN4I_I2C_REG_LINE_CONTROL			0x20
+#define SUN4I_I2C_LINE_CONTROL_SCL_STATE		BIT(5)
+#define SUN4I_I2C_LINE_CONTROL_SDA_STATE		BIT(4)
+#define SUN4I_I2C_LINE_CONTROL_SCL_CTL			BIT(3)
+#define SUN4I_I2C_LINE_CONTROL_SCL_CTL_EN		BIT(2)
+#define SUN4I_I2C_LINE_CONTROL_SDA_CTL			BIT(1)
+#define SUN4I_I2C_LINE_CONTROL_SDA_CTL_EN		BIT(0)
+
+
 /* Driver states */
 enum {
 	MV64XXX_I2C_STATE_INVALID,
@@ -562,6 +572,7 @@ mv64xxx_i2c_wait_for_completion(struct mv64xxx_i2c_data *drv_data)
 				"mv64xxx: I2C bus locked, block: %d, "
 				"time_left: %d\n", drv_data->block,
 				(int)time_left);
+			i2c_recover_bus(&drv_data->adapter);
 			mv64xxx_i2c_hw_init(drv_data);
 		}
 	} else
@@ -741,6 +752,89 @@ static const struct i2c_algorithm mv64xxx_i2c_algo = {
 /*
  *****************************************************************************
  *
+ *	I2C bus recovery information
+ *
+ *****************************************************************************
+ */
+static int sun4i_i2c_get_scl(struct i2c_adapter *adap)
+{
+	struct mv64xxx_i2c_data *drv_data = i2c_get_adapdata(adap);
+
+	return !!(readl(drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL) &
+		  SUN4I_I2C_LINE_CONTROL_SCL_STATE);
+}
+
+static void sun4i_i2c_set_scl(struct i2c_adapter *adap, int val)
+{
+	struct mv64xxx_i2c_data *drv_data = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = readl(drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+	if (val)
+		reg &= ~SUN4I_I2C_LINE_CONTROL_SCL_CTL;
+	else
+		reg |= SUN4I_I2C_LINE_CONTROL_SCL_CTL;
+	writel(reg, drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+}
+
+static int sun4i_i2c_get_sda(struct i2c_adapter *adap)
+{
+	struct mv64xxx_i2c_data *drv_data = i2c_get_adapdata(adap);
+
+	return !!(readl(drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL) &
+		  SUN4I_I2C_LINE_CONTROL_SDA_STATE);
+}
+
+static void sun4i_i2c_set_sda(struct i2c_adapter *adap, int val)
+{
+	struct mv64xxx_i2c_data *drv_data = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = readl(drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+	if (val)
+		reg &= ~SUN4I_I2C_LINE_CONTROL_SDA_CTL;
+	else
+		reg |= SUN4I_I2C_LINE_CONTROL_SDA_CTL;
+	writel(reg, drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+}
+
+static void sun4i_i2c_prepare_recovery(struct i2c_adapter *adap)
+{
+	struct mv64xxx_i2c_data *drv_data = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = readl(drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+	reg |= SUN4I_I2C_LINE_CONTROL_SDA_CTL_EN |
+	       SUN4I_I2C_LINE_CONTROL_SCL_CTL_EN;
+	writel(reg, drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+}
+
+static void sun4i_i2c_unprepare_recovery(struct i2c_adapter *adap)
+{
+	struct mv64xxx_i2c_data *drv_data = i2c_get_adapdata(adap);
+	u32 reg;
+
+	reg = readl(drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+	reg &= ~(SUN4I_I2C_LINE_CONTROL_SDA_CTL_EN |
+		 SUN4I_I2C_LINE_CONTROL_SCL_CTL_EN);
+	writel(reg, drv_data->reg_base + SUN4I_I2C_REG_LINE_CONTROL);
+}
+
+static struct i2c_bus_recovery_info sun4i_i2c_bus_recovery_info = {
+	.recover_bus = i2c_generic_scl_recovery,
+
+	.get_scl = sun4i_i2c_get_scl,
+	.set_scl = sun4i_i2c_set_scl,
+	.get_sda = sun4i_i2c_get_sda,
+	.set_sda = sun4i_i2c_set_sda,
+
+	.prepare_recovery = sun4i_i2c_prepare_recovery,
+	.unprepare_recovery = sun4i_i2c_unprepare_recovery,
+};
+
+/*
+ *****************************************************************************
+ *
  *	Driver Interface & Early Init Routines
  *
  *****************************************************************************
@@ -813,8 +907,11 @@ mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
 		bus_freq = 100000; /* 100kHz by default */
 
 	if (of_device_is_compatible(np, "allwinner,sun4i-a10-i2c") ||
-	    of_device_is_compatible(np, "allwinner,sun6i-a31-i2c"))
+	    of_device_is_compatible(np, "allwinner,sun6i-a31-i2c")) {
 		drv_data->clk_n_base_0 = true;
+		drv_data->adapter.bus_recovery_info =
+			&sun4i_i2c_bus_recovery_info;
+	}
 
 	if (!mv64xxx_find_baud_factors(drv_data, bus_freq, tclk)) {
 		rc = -EINVAL;
