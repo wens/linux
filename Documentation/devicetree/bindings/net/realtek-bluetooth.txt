@@ -1,0 +1,37 @@
+Realtek Bluetooth Chips
+-----------------------
+
+This documents the binding structure and common properties for serial
+attached Realtek devices.
+
+Serial attached Realtek devices shall be a child node of the host UART
+device the slave device is attached to. See ../serial/slave-device.txt
+for more information
+
+Required properties:
+- compatible: should contain one of the following:
+    * "realtek,rtl8723bs-bt"
+    * "realtek,rtl8723ds-bt"
+- vbat-supply: regulator specifier, used to supply core voltage
+- vddio-supply: regulator specifier, used to supply I/O voltage
+
+Optional properties:
+- enable-gpios: GPIO specifier, used to enable/disable the Bluetooth module
+- device-wake-gpios: GPIO specifier, used to wake the Bluetooth module
+- host-wake-gpios: GPIO specifier, used to wake the system
+
+
+Example:
+
+&uart {
+	...
+
+	bluetooth {
+		compatible = "realtek,rtl8723bs-bt";
+		vbat-supply = <&reg_dldo4>;
+		vddio-supply = <&reg_eldo1>;
+		device-wakeup-gpios = <&r_pio 0 6 GPIO_ACTIVE_HIGH>; /* PL6 */
+		host-wakeup-gpios = <&r_pio 0 5 GPIO_ACTIVE_HIGH>; /* PL5 */
+		enable-gpios = <&r_pio 0 4 GPIO_ACTIVE_HIGH>; /* PL4 */
+	};
+};
