@@ -178,10 +178,15 @@ static int sun8i_ui_layer_update_formats(struct sun8i_mixer *mixer, int channel,
 					 int overlay, struct drm_plane *plane)
 {
 	struct drm_plane_state *state = plane->state;
+	struct drm_format_name_buf format_name;
 	const struct de2_fmt_info *fmt_info;
 	u32 val, ch_base;
 
 	ch_base = sun8i_channel_base(mixer, channel);
+
+	DRM_DEBUG_DRIVER("Plane FB format is %s\n",
+			 drm_get_format_name(state->fb->format->format,
+					     &format_name));
 
 	fmt_info = sun8i_mixer_format_info(state->fb->format->format);
 	if (!fmt_info || !fmt_info->rgb) {
