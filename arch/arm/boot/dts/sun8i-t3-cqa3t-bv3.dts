@@ -1,20 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (c) 2017 Icenowy Zheng <icenowy@aosc.xyz>
- *
- * Based on sun50i-a64-pine64.dts, which is:
- *   Copyright (c) 2016 ARM Ltd.
+ * Copyright (C) 2017 Chen-Yu Tsai <wens@csie.org>
+ * Copyright (C) 2017 Icenowy Zheng <icenowy@aosc.io>
+ * Copyright (C) 2018 Hao Zhang <hao5781286@gmail.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
  * licensing only applies to this file, and not this project as a
  * whole.
  *
- *  a) This library is free software; you can redistribute it and/or
+ *  a) This file is free software; you can redistribute it and/or
  *     modify it under the terms of the GNU General Public License as
  *     published by the Free Software Foundation; either version 2 of the
  *     License, or (at your option) any later version.
  *
- *     This library is distributed in the hope that it will be useful,
+ *     This file is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
@@ -44,16 +44,16 @@
  */
 
 /dts-v1/;
+#include "sun8i-r40.dtsi"
 
-#include "sun50i-a64-sopine.dtsi"
+#include <dt-bindings/gpio/gpio.h>
 
 / {
-	model = "SoPine with baseboard";
-	compatible = "pine64,sopine-baseboard", "pine64,sopine",
-		     "allwinner,sun50i-a64";
+	model = "t3-cqa3t-bv3";
+	compatible = "qihua,t3-cqa3t-bv3", "allwinner,sun8i-t3",
+		     "allwinner,sun8i-r40";
 
 	aliases {
-		ethernet0 = &emac;
 		serial0 = &uart0;
 	};
 
@@ -61,7 +61,7 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	hdmi-connector {
+	connector {
 		compatible = "hdmi-connector";
 		type = "a";
 
@@ -72,23 +72,19 @@
 		};
 	};
 
-	reg_vcc1v8: vcc1v8 {
+	reg_vcc5v0: vcc5v0 {
 		compatible = "regulator-fixed";
-		regulator-name = "vcc1v8";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
+		regulator-name = "vcc5v0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		gpio = <&pio 7 23 GPIO_ACTIVE_HIGH>; /* PH23 */
+		enable-active-high;
 	};
 };
 
-&codec {
-	status = "okay";
-};
-
-&codec_analog {
-	status = "okay";
-};
-
-&dai {
+&ahci {
+	ahci-supply = <&reg_dldo4>;
+	phy-supply = <&reg_eldo3>;
 	status = "okay";
 };
 
@@ -96,25 +92,15 @@
 	status = "okay";
 };
 
-&ehci0 {
-	status = "okay";
-};
-
 &ehci1 {
 	status = "okay";
 };
 
-&emac {
-	pinctrl-names = "default";
-	pinctrl-0 = <&rgmii_pins>;
-	phy-mode = "rgmii";
-	phy-handle = <&ext_rgmii_phy>;
-	phy-supply = <&reg_dc1sw>;
+&ehci2 {
 	status = "okay";
 };
 
 &hdmi {
-	hvcc-supply = <&reg_dldo1>;
 	status = "okay";
 };
 
@@ -124,25 +110,31 @@
 	};
 };
 
-&mdio {
-	ext_rgmii_phy: ethernet-phy@1 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <1>;
+&i2c0 {
+	status = "okay";
+
+	axp22x: pmic@34 {
+		compatible = "x-powers,axp221";
+		reg = <0x34>;
+		interrupt-parent = <&nmi_intc>;
+		interrupts = <0 IRQ_TYPE_LEVEL_LOW>;
 	};
 };
 
-&mmc2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&mmc2_pins>;
+#include "axp22x.dtsi"
+
+&mmc0 {
 	vmmc-supply = <&reg_dcdc1>;
-	vqmmc-supply = <&reg_vcc1v8>;
-	bus-width = <8>;
-	non-removable;
-	cap-mmc-hw-reset;
+	bus-width = <4>;
+	cd-gpios = <&pio 7 15 GPIO_ACTIVE_LOW>; /* PH15 */
 	status = "okay";
 };
 
-&ohci0 {
+&mmc2 {
+	vmmc-supply = <&reg_dcdc1>;
+	vqmmc-supply = <&reg_dcdc1>;
+	bus-width = <8>;
+	non-removable;
 	status = "okay";
 };
 
@@ -150,43 +142,74 @@
 	status = "okay";
 };
 
-&reg_dc1sw {
-	regulator-name = "vcc-phy";
+&ohci2 {
+	status = "okay";
+};
+
+&reg_aldo2 {
+	regulator-always-on;
+	regulator-min-microvolt = <2500000>;
+	regulator-max-microvolt = <2500000>;
+	regulator-name = "vcc-pa";
+};
+
+&reg_aldo3 {
+	regulator-always-on;
+	regulator-min-microvolt = <2700000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "avcc";
+};
+
+&reg_dcdc1 {
+	regulator-always-on;
+	regulator-min-microvolt = <3000000>;
+	regulator-max-microvolt = <3000000>;
+	regulator-name = "vcc-3v0";
+};
+
+&reg_dcdc2 {
+	regulator-always-on;
+	regulator-min-microvolt = <1000000>;
+	regulator-max-microvolt = <1300000>;
+	regulator-name = "vdd-cpu";
+};
+
+&reg_dcdc3 {
+	regulator-always-on;
+	regulator-min-microvolt = <1000000>;
+	regulator-max-microvolt = <1300000>;
+	regulator-name = "vdd-sys";
+};
+
+&reg_dcdc5 {
+	regulator-always-on;
+	regulator-min-microvolt = <1500000>;
+	regulator-max-microvolt = <1500000>;
+	regulator-name = "vcc-dram";
 };
 
 &reg_dldo1 {
+	regulator-always-on;
 	regulator-min-microvolt = <3300000>;
 	regulator-max-microvolt = <3300000>;
-	regulator-name = "vcc-hdmi";
+	regulator-name = "vcc-pg";
 };
 
-&reg_dldo2 {
+&reg_dldo3 {
+	regulator-always-on;
 	regulator-min-microvolt = <3300000>;
 	regulator-max-microvolt = <3300000>;
-	regulator-name = "vcc-mipi";
+	regulator-name = "vcc-dldo3";
 };
 
-&reg_dldo4 {
-	regulator-min-microvolt = <3300000>;
-	regulator-max-microvolt = <3300000>;
-	regulator-name = "vcc-wifi";
+&reg_eldo3 {
+	regulator-always-on;
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	regulator-name = "vcc-pe";
 };
 
-&simplefb_hdmi {
-	vcc-hdmi-supply = <&reg_dldo1>;
-};
-
-&sound {
-	simple-audio-card,aux-devs = <&codec_analog>;
-	simple-audio-card,widgets = "Microphone", "Microphone Jack",
-				    "Headphone", "Headphone Jack";
-	simple-audio-card,routing =
-			"Left DAC", "AIF1 Slot 0 Left",
-			"Right DAC", "AIF1 Slot 0 Right",
-			"Headphone Jack", "HP",
-			"AIF1 Slot 0 Left ADC", "Left ADC",
-			"AIF1 Slot 0 Right ADC", "Right ADC",
-			"MIC2", "Microphone Jack";
+&tcon_tv0 {
 	status = "okay";
 };
 
@@ -196,11 +219,8 @@
 	status = "okay";
 };
 
-&usb_otg {
-	dr_mode = "host";
-	status = "okay";
-};
-
 &usbphy {
+	usb1_vbus-supply = <&reg_vcc5v0>;
+	usb2_vbus-supply = <&reg_vcc5v0>;
 	status = "okay";
 };
