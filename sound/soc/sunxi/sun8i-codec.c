@@ -415,21 +415,22 @@ static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 			sun8i_input_mixer_controls),
 
 	/* Clocks */
-	SND_SOC_DAPM_SUPPLY("MODCLK AFI1", SUN8I_MOD_CLK_ENA,
+	SND_SOC_DAPM_SUPPLY("MODCLK AIF1", SUN8I_MOD_CLK_ENA,
 			    SUN8I_MOD_CLK_ENA_AIF1, 0, NULL, 0),
 	SND_SOC_DAPM_SUPPLY("MODCLK DAC", SUN8I_MOD_CLK_ENA,
 			    SUN8I_MOD_CLK_ENA_DAC, 0, NULL, 0),
 	SND_SOC_DAPM_SUPPLY("MODCLK ADC", SUN8I_MOD_CLK_ENA,
 			    SUN8I_MOD_CLK_ENA_ADC, 0, NULL, 0),
-	SND_SOC_DAPM_SUPPLY("AIF1", SUN8I_SYSCLK_CTL,
+	SND_SOC_DAPM_SUPPLY("AIF1CLK", SUN8I_SYSCLK_CTL,
 			    SUN8I_SYSCLK_CTL_AIF1CLK_ENA, 0, NULL, 0),
 	SND_SOC_DAPM_SUPPLY("SYSCLK", SUN8I_SYSCLK_CTL,
 			    SUN8I_SYSCLK_CTL_SYSCLK_ENA, 0, NULL, 0),
 
-	SND_SOC_DAPM_SUPPLY("AIF1 PLL", SUN8I_SYSCLK_CTL,
+	/* Clock muxing (can we model these as invisible controls?) */
+	SND_SOC_DAPM_SUPPLY("AIF1CLK from PLL", SUN8I_SYSCLK_CTL,
 			    SUN8I_SYSCLK_CTL_AIF1CLK_SRC_PLL, 0, NULL, 0),
 	/* Inversion as 0=AIF1, 1=AIF2 */
-	SND_SOC_DAPM_SUPPLY("SYSCLK AIF1", SUN8I_SYSCLK_CTL,
+	SND_SOC_DAPM_SUPPLY("SYSCLK from AIF1", SUN8I_SYSCLK_CTL,
 			    SUN8I_SYSCLK_CTL_SYSCLK_SRC, 1, NULL, 0),
 
 	/* Module reset */
@@ -446,21 +447,32 @@ static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 };
 
 static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
-	/* Clock Routes */
-	{ "AIF1", NULL, "SYSCLK AIF1" },
-	{ "AIF1 PLL", NULL, "AIF1" },
-	{ "RST AIF1", NULL, "AIF1 PLL" },
-	{ "MODCLK AFI1", NULL, "RST AIF1" },
-	{ "DAC", NULL, "MODCLK AFI1" },
-	{ "ADC", NULL, "MODCLK AFI1" },
+	/* AIF1 clock from SoC PLL2 instead of MCLK */
+	{ "AIF1CLK", NULL, "AIF1CLK from PLL" },
 
-	{ "RST DAC", NULL, "SYSCLK" },
+	/* SYSCLK from AIF1 clock instead of AIF2 clock */
+	{ "SYSCLK from AIF1", NULL, "AIF1CLK" },
+	{ "SYSCLK", NULL, "SYSCLK from AIF1" },
+
+	/* SYSCLK drives everything */
+	{ "MODCLK AIF1", NULL, "SYSCLK" },
+	{ "MODCLK DAC", NULL, "SYSCLK" },
+	{ "MODCLK ADC", NULL, "SYSCLK" },
+
+	/* Tie module's reset control to its own clock for convenience */
+	{ "MODCLK AIF1", NULL, "RST AIF1" },
 	{ "MODCLK DAC", NULL, "RST DAC" },
-	{ "DAC", NULL, "MODCLK DAC" },
-
-	{ "RST ADC", NULL, "SYSCLK" },
 	{ "MODCLK ADC", NULL, "RST ADC" },
+
+	/* Module clocks for modules */
+	{ "AIF1 Slot 0 Left", NULL, "MODCLK AIF1" },
+	{ "AIF1 Slot 0 Right", NULL, "MODCLK AIF1" },
+	{ "AIF1 Slot 0 Left ADC", NULL, "MODCLK AIF1" },
+	{ "AIF1 Slot 0 Right ADC", NULL, "MODCLK AIF1" },
+	{ "DAC", NULL, "MODCLK DAC" },
 	{ "ADC", NULL, "MODCLK ADC" },
+
+	/* Clock Routes above */
 
 	/* DAC Routes */
 	{ "AIF1 Slot 0 Right", NULL, "DAC" },
