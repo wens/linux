@@ -42,7 +42,7 @@ MODULE_PARM_DESC(debug, " activates debug info");
 #define MAX_WIDTH		4096U
 #define MIN_WIDTH		640U
 #define MAX_HEIGHT		2160U
-#define MIN_HEIGHT		480U
+#define MIN_HEIGHT		360U
 
 #define dprintk(dev, fmt, arg...) \
 	v4l2_dbg(1, debug, &dev->v4l2_dev, "%s: " fmt, __func__, ## arg)
@@ -61,7 +61,7 @@ struct pixfmt_info {
 };
 
 static const struct v4l2_fwht_pixfmt_info pixfmt_fwht = {
-	V4L2_PIX_FMT_FWHT, 0, 3, 1, 1, 1, 1, 1
+	V4L2_PIX_FMT_FWHT, 0, 3, 1, 1, 1, 1, 1, 0
 };
 
 static void vicodec_dev_release(struct device *dev)
@@ -397,11 +397,6 @@ static int vidioc_querycap(struct file *file, void *priv,
 	strncpy(cap->card, VICODEC_NAME, sizeof(cap->card) - 1);
 	snprintf(cap->bus_info, sizeof(cap->bus_info),
 			"platform:%s", VICODEC_NAME);
-	cap->device_caps =  V4L2_CAP_STREAMING |
-			    (multiplanar ?
-			     V4L2_CAP_VIDEO_M2M_MPLANE :
-			     V4L2_CAP_VIDEO_M2M);
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 	return 0;
 }
 
@@ -993,6 +988,18 @@ static int vicodec_start_streaming(struct vb2_queue *q,
 	unsigned int size = q_data->width * q_data->height;
 	const struct v4l2_fwht_pixfmt_info *info = q_data->info;
 	unsigned int chroma_div = info->width_div * info->height_div;
+	unsigned int total_planes_size;
+
+	/*
+	 * we don't know ahead how many components are in the encoding type
+	 * V4L2_PIX_FMT_FWHT, so we will allocate space for 4 planes.
+	 */
+	if (info->id == V4L2_PIX_FMT_FWHT || info->components_num == 4)
+		total_planes_size = 2 * size + 2 * (size / chroma_div);
+	else if (info->components_num == 3)
+		total_planes_size = size + 2 * (size / chroma_div);
+	else
+		total_planes_size = size;
 
 	q_data->sequence = 0;
 
@@ -1002,10 +1009,8 @@ static int vicodec_start_streaming(struct vb2_queue *q,
 	state->width = q_data->width;
 	state->height = q_data->height;
 	state->ref_frame.width = state->ref_frame.height = 0;
-	state->ref_frame.luma = kvmalloc(size + 2 * size / chroma_div,
-					 GFP_KERNEL);
-	ctx->comp_max_size = size + 2 * size / chroma_div +
-			     sizeof(struct fwht_cframe_hdr);
+	state->ref_frame.luma = kvmalloc(total_planes_size, GFP_KERNEL);
+	ctx->comp_max_size = total_planes_size + sizeof(struct fwht_cframe_hdr);
 	state->compressed_frame = kvmalloc(ctx->comp_max_size, GFP_KERNEL);
 	if (!state->ref_frame.luma || !state->compressed_frame) {
 		kvfree(state->ref_frame.luma);
@@ -1013,8 +1018,20 @@ static int vicodec_start_streaming(struct vb2_queue *q,
 		vicodec_return_bufs(q, VB2_BUF_STATE_QUEUED);
 		return -ENOMEM;
 	}
-	state->ref_frame.cb = state->ref_frame.luma + size;
-	state->ref_frame.cr = state->ref_frame.cb + size / chroma_div;
+	if (info->id == V4L2_PIX_FMT_FWHT || info->components_num >= 3) {
+		state->ref_frame.cb = state->ref_frame.luma + size;
+		state->ref_frame.cr = state->ref_frame.cb + size / chroma_div;
+	} else {
+		state->ref_frame.cb = NULL;
+		state->ref_frame.cr = NULL;
+	}
+
+	if (info->id == V4L2_PIX_FMT_FWHT || info->components_num == 4)
+		state->ref_frame.alpha =
+			state->ref_frame.cr + size / chroma_div;
+	else
+		state->ref_frame.alpha = NULL;
+
 	ctx->last_src_buf = NULL;
 	ctx->last_dst_buf = NULL;
 	state->gop_cnt = 0;
@@ -1311,6 +1328,8 @@ static int vicodec_probe(struct platform_device *pdev)
 	vfd->lock = &dev->enc_mutex;
 	vfd->v4l2_dev = &dev->v4l2_dev;
 	strscpy(vfd->name, "vicodec-enc", sizeof(vfd->name));
+	vfd->device_caps = V4L2_CAP_STREAMING |
+		(multiplanar ? V4L2_CAP_VIDEO_M2M_MPLANE : V4L2_CAP_VIDEO_M2M);
 	v4l2_disable_ioctl(vfd, VIDIOC_DECODER_CMD);
 	v4l2_disable_ioctl(vfd, VIDIOC_TRY_DECODER_CMD);
 	video_set_drvdata(vfd, dev);
@@ -1327,6 +1346,8 @@ static int vicodec_probe(struct platform_device *pdev)
 	vfd = &dev->dec_vfd;
 	vfd->lock = &dev->dec_mutex;
 	vfd->v4l2_dev = &dev->v4l2_dev;
+	vfd->device_caps = V4L2_CAP_STREAMING |
+		(multiplanar ? V4L2_CAP_VIDEO_M2M_MPLANE : V4L2_CAP_VIDEO_M2M);
 	strscpy(vfd->name, "vicodec-dec", sizeof(vfd->name));
 	v4l2_disable_ioctl(vfd, VIDIOC_ENCODER_CMD);
 	v4l2_disable_ioctl(vfd, VIDIOC_TRY_ENCODER_CMD);

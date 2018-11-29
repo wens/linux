@@ -438,8 +438,6 @@ static int vidioc_querycap(struct file *file, void *priv,
 	strncpy(cap->card, MEM2MEM_NAME, sizeof(cap->card) - 1);
 	snprintf(cap->bus_info, sizeof(cap->bus_info),
 			"platform:%s", MEM2MEM_NAME);
-	cap->device_caps = V4L2_CAP_VIDEO_M2M | V4L2_CAP_STREAMING;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 	return 0;
 }
 
@@ -999,6 +997,7 @@ static const struct video_device vim2m_videodev = {
 	.ioctl_ops	= &vim2m_ioctl_ops,
 	.minor		= -1,
 	.release	= video_device_release_empty,
+	.device_caps	= V4L2_CAP_VIDEO_M2M | V4L2_CAP_STREAMING,
 };
 
 static const struct v4l2_m2m_ops m2m_ops = {
@@ -1009,7 +1008,7 @@ static const struct v4l2_m2m_ops m2m_ops = {
 
 static const struct media_device_ops m2m_media_ops = {
 	.req_validate = vb2_request_validate,
-	.req_queue = vb2_m2m_request_queue,
+	.req_queue = v4l2_m2m_request_queue,
 };
 
 static int vim2m_probe(struct platform_device *pdev)

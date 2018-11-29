@@ -3920,6 +3920,14 @@ M:	Jaya Kumar <jayakumar.alsa@gmail.com>
 S:	Maintained
 F:	sound/pci/cs5535audio/
 
+CSI DRIVERS FOR ALLWINNER V3s
+M:	Yong Deng <yong.deng@magewell.com>
+L:	linux-media@vger.kernel.org
+T:	git git://linuxtv.org/media_tree.git
+S:	Maintained
+F:	drivers/media/platform/sunxi/sun6i-csi/
+F:	Documentation/devicetree/bindings/media/sun6i-csi.txt
+
 CW1200 WLAN driver
 M:	Solomon Peachy <pizza@shaftnet.org>
 S:	Maintained
@@ -13286,6 +13294,12 @@ L:	sdricohcs-devel@lists.sourceforge.net (subscribers-only)
 S:	Maintained
 F:	drivers/mmc/host/sdricoh_cs.c
 
+SECO BOARDS CEC DRIVER
+M:	Ettore Chimenti <ek5.chimenti@gmail.com>
+S:	Maintained
+F:	drivers/media/platform/seco-cec/seco-cec.c
+F:	drivers/media/platform/seco-cec/seco-cec.h
+
 SECURE COMPUTING
 M:	Kees Cook <keescook@chromium.org>
 R:	Andy Lutomirski <luto@amacapital.net>
@@ -13851,6 +13865,14 @@ L:	linux-wireless@vger.kernel.org
 S:	Maintained
 F:	drivers/ssb/
 F:	include/linux/ssb/
+
+SONY IMX214 SENSOR DRIVER
+M:	Ricardo Ribalda <ricardo.ribalda@gmail.com>
+L:	linux-media@vger.kernel.org
+T:	git git://linuxtv.org/media_tree.git
+S:	Maintained
+F:	drivers/media/i2c/imx214.c
+F:	Documentation/devicetree/bindings/media/i2c/sony,imx214.txt
 
 SONY IMX258 SENSOR DRIVER
 M:	Sakari Ailus <sakari.ailus@linux.intel.com>
@@ -16344,6 +16366,12 @@ F:	lib/xarray.c
 F:	include/linux/idr.h
 F:	include/linux/xarray.h
 F:	tools/testing/radix-tree
+
+XBOX DVD IR REMOTE
+M:	Benjamin Valentin <benpicco@googlemail.com>
+S:	Maintained
+F:	drivers/media/rc/xbox_remote.c
+F:	drivers/media/rc/keymaps/rc-xbox-dvd.c
 
 XC2028/3028 TUNER DRIVER
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
