@@ -863,6 +863,9 @@ static int sun6i_csi_resource_request(struct sun6i_csi_dev *sdev,
 		return ret;
 	}
 
+	/* Set a default clock of 300 MHz */
+	clk_set_rate(sdev->clk_mod, 300000000);
+
 	return 0;
 }
 
