@@ -364,18 +364,19 @@ static const struct snd_kcontrol_new sun8i_dac_mixer_controls[] = {
 };
 
 static const struct snd_kcontrol_new sun8i_aif1_slot0_mixer_controls[] = {
-	SOC_DAPM_DOUBLE("AIF1 Slot 0 Digital ADC Capture Switch",
+	SOC_DAPM_DOUBLE("AIF1 Slot 0 Loopback Capture Switch",
 			SUN8I_AIF1_MXR_SRC,
 			SUN8I_AIF1_MXR_SRC_AD0L_MXL_SRC_AIF1DA0L,
 			SUN8I_AIF1_MXR_SRC_AD0R_MXR_SRC_AIF1DA0R, 1, 0),
-	SOC_DAPM_DOUBLE("AIF2 Digital ADC Capture Switch", SUN8I_AIF1_MXR_SRC,
+	SOC_DAPM_DOUBLE("AIF2 to AIF1 Slot 0 Capture Switch",
+			SUN8I_AIF1_MXR_SRC,
 			SUN8I_AIF1_MXR_SRC_AD0L_MXL_SRC_AIF2DACL,
 			SUN8I_AIF1_MXR_SRC_AD0R_MXR_SRC_AIF2DACR, 1, 0),
-	SOC_DAPM_DOUBLE("AIF1 Data Digital ADC Capture Switch",
+	SOC_DAPM_DOUBLE("ADC to AIF1 Slot 0 Capture Switch",
 			SUN8I_AIF1_MXR_SRC,
 			SUN8I_AIF1_MXR_SRC_AD0L_MXL_SRC_ADCL,
 			SUN8I_AIF1_MXR_SRC_AD0R_MXR_SRC_ADCR, 1, 0),
-	SOC_DAPM_DOUBLE("AIF2 Inv Digital ADC Capture Switch",
+	SOC_DAPM_DOUBLE("AIF2 Inv to AIF1 Slot 0 Capture Switch",
 			SUN8I_AIF1_MXR_SRC,
 			SUN8I_AIF1_MXR_SRC_AD0L_MXL_SRC_AIF2DACR,
 			SUN8I_AIF1_MXR_SRC_AD0R_MXR_SRC_AIF2DACL, 1, 0),
@@ -481,9 +482,9 @@ static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
 	{ "DAC Digital", NULL, "Right Digital DAC Mixer" },
 
 	/* AIF1 Slot 0 Mixer Routes */
-	{ "AIF1 Slot 0 Left Mixer", "AIF1 Data Digital ADC Capture Switch",
+	{ "AIF1 Slot 0 Left Mixer", "ADC to AIF1 Slot 0 Capture Switch",
 	  "ADC Digital" },
-	{ "AIF1 Slot 0 Right Mixer", "AIF1 Data Digital ADC Capture Switch",
+	{ "AIF1 Slot 0 Right Mixer", "ADC to AIF1 Slot 0 Capture Switch",
 	  "ADC Digital" },
 
 	/* AIF1 Slot 0 Output Routes */
