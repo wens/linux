@@ -363,7 +363,7 @@ static const struct snd_kcontrol_new sun8i_dac_mixer_controls[] = {
 			SUN8I_DAC_MXR_SRC_DACR_MXR_SRC_ADCR, 1, 0),
 };
 
-static const struct snd_kcontrol_new sun8i_input_mixer_controls[] = {
+static const struct snd_kcontrol_new sun8i_aif1_slot0_mixer_controls[] = {
 	SOC_DAPM_DOUBLE("AIF1 Slot 0 Digital ADC Capture Switch",
 			SUN8I_AIF1_MXR_SRC,
 			SUN8I_AIF1_MXR_SRC_AD0L_MXL_SRC_AIF1DA0L,
@@ -404,15 +404,15 @@ static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 			    SUN8I_AIF1_ADCDAT_CTRL,
 			    SUN8I_AIF1_ADCDAT_CTRL_AIF1_DA0R_ENA, 0),
 
-	/* DAC and ADC Mixers */
+	/* Digital Mixers */
 	SOC_MIXER_ARRAY("Left Digital DAC Mixer", SND_SOC_NOPM, 0, 0,
 			sun8i_dac_mixer_controls),
 	SOC_MIXER_ARRAY("Right Digital DAC Mixer", SND_SOC_NOPM, 0, 0,
 			sun8i_dac_mixer_controls),
-	SOC_MIXER_ARRAY("Left Digital ADC Mixer", SND_SOC_NOPM, 0, 0,
-			sun8i_input_mixer_controls),
-	SOC_MIXER_ARRAY("Right Digital ADC Mixer", SND_SOC_NOPM, 0, 0,
-			sun8i_input_mixer_controls),
+	SOC_MIXER_ARRAY("AIF1 Slot 0 Left Mixer", SND_SOC_NOPM, 0, 0,
+			sun8i_aif1_slot0_mixer_controls),
+	SOC_MIXER_ARRAY("AIF1 Slot 0 Right Mixer", SND_SOC_NOPM, 0, 0,
+			sun8i_aif1_slot0_mixer_controls),
 
 	/* Clocks */
 	SND_SOC_DAPM_SUPPLY("MODCLK AIF1", SUN8I_MOD_CLK_ENA,
@@ -484,10 +484,10 @@ static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
 	{ "AIF1 Slot 0 Right ADC", NULL, "ADC" },
 	{ "AIF1 Slot 0 Left ADC", NULL, "ADC" },
 
-	/* ADC Mixer Routes */
-	{ "Left Digital ADC Mixer", "AIF1 Data Digital ADC Capture Switch",
+	/* AIF1 Slot 0 Mixer Routes */
+	{ "AIF1 Slot 0 Left Mixer", "AIF1 Data Digital ADC Capture Switch",
 	  "AIF1 Slot 0 Left ADC" },
-	{ "Right Digital ADC Mixer", "AIF1 Data Digital ADC Capture Switch",
+	{ "AIF1 Slot 0 Right Mixer", "AIF1 Data Digital ADC Capture Switch",
 	  "AIF1 Slot 0 Right ADC" },
 };
 
