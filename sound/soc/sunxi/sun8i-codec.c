@@ -385,8 +385,8 @@ static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 	/* Digital parts of the DACs and ADC */
 	SND_SOC_DAPM_DAC("DAC Digital", NULL, SUN8I_DAC_DIG_CTRL,
 			 SUN8I_DAC_DIG_CTRL_ENDA, 0),
-	SND_SOC_DAPM_SUPPLY("ADC", SUN8I_ADC_DIG_CTRL, SUN8I_ADC_DIG_CTRL_ENDA,
-			    0, NULL, 0),
+	SND_SOC_DAPM_ADC("ADC Digital", NULL, SUN8I_ADC_DIG_CTRL,
+			 SUN8I_ADC_DIG_CTRL_ENDA, 0),
 
 	/* Analog DAC AIF */
 	SND_SOC_DAPM_AIF_IN("AIF1 Slot 0 Left", "Playback", 0,
@@ -466,7 +466,7 @@ static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
 	{ "AIF1 Slot 0 Left ADC", NULL, "MODCLK AIF1" },
 	{ "AIF1 Slot 0 Right ADC", NULL, "MODCLK AIF1" },
 	{ "DAC Digital", NULL, "MODCLK DAC" },
-	{ "ADC", NULL, "MODCLK ADC" },
+	{ "ADC Digital", NULL, "MODCLK ADC" },
 
 	/* Clock Routes above */
 
@@ -480,15 +480,15 @@ static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
 	{ "DAC Digital", NULL, "Left Digital DAC Mixer" },
 	{ "DAC Digital", NULL, "Right Digital DAC Mixer" },
 
-	/* ADC Routes */
-	{ "AIF1 Slot 0 Right ADC", NULL, "ADC" },
-	{ "AIF1 Slot 0 Left ADC", NULL, "ADC" },
-
 	/* AIF1 Slot 0 Mixer Routes */
 	{ "AIF1 Slot 0 Left Mixer", "AIF1 Data Digital ADC Capture Switch",
-	  "AIF1 Slot 0 Left ADC" },
+	  "ADC Digital" },
 	{ "AIF1 Slot 0 Right Mixer", "AIF1 Data Digital ADC Capture Switch",
-	  "AIF1 Slot 0 Right ADC" },
+	  "ADC Digital" },
+
+	/* AIF1 Slot 0 Output Routes */
+	{ "AIF1 Slot 0 Left ADC", NULL, "AIF1 Slot 0 Left Mixer" },
+	{ "AIF1 Slot 0 Right ADC", NULL, "AIF1 Slot 0 Right Mixer" },
 };
 
 static const struct snd_soc_dai_ops sun8i_codec_dai_ops = {
