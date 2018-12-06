@@ -383,8 +383,8 @@ static const struct snd_kcontrol_new sun8i_aif1_slot0_mixer_controls[] = {
 
 static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 	/* Digital parts of the DACs and ADC */
-	SND_SOC_DAPM_SUPPLY("DAC", SUN8I_DAC_DIG_CTRL, SUN8I_DAC_DIG_CTRL_ENDA,
-			    0, NULL, 0),
+	SND_SOC_DAPM_DAC("DAC Digital", NULL, SUN8I_DAC_DIG_CTRL,
+			 SUN8I_DAC_DIG_CTRL_ENDA, 0),
 	SND_SOC_DAPM_SUPPLY("ADC", SUN8I_ADC_DIG_CTRL, SUN8I_ADC_DIG_CTRL_ENDA,
 			    0, NULL, 0),
 
@@ -465,20 +465,20 @@ static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
 	{ "AIF1 Slot 0 Right", NULL, "MODCLK AIF1" },
 	{ "AIF1 Slot 0 Left ADC", NULL, "MODCLK AIF1" },
 	{ "AIF1 Slot 0 Right ADC", NULL, "MODCLK AIF1" },
-	{ "DAC", NULL, "MODCLK DAC" },
+	{ "DAC Digital", NULL, "MODCLK DAC" },
 	{ "ADC", NULL, "MODCLK ADC" },
 
 	/* Clock Routes above */
-
-	/* DAC Routes */
-	{ "AIF1 Slot 0 Right", NULL, "DAC" },
-	{ "AIF1 Slot 0 Left", NULL, "DAC" },
 
 	/* DAC Mixer Routes */
 	{ "Left Digital DAC Mixer", "AIF1 Slot 0 Digital DAC Playback Switch",
 	  "AIF1 Slot 0 Left"},
 	{ "Right Digital DAC Mixer", "AIF1 Slot 0 Digital DAC Playback Switch",
 	  "AIF1 Slot 0 Right"},
+
+	/* DAC Routes */
+	{ "DAC Digital", NULL, "Left Digital DAC Mixer" },
+	{ "DAC Digital", NULL, "Right Digital DAC Mixer" },
 
 	/* ADC Routes */
 	{ "AIF1 Slot 0 Right ADC", NULL, "ADC" },
