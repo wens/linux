@@ -389,7 +389,7 @@ static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 	SND_SOC_DAPM_ADC("ADC Digital", NULL, SUN8I_ADC_DIG_CTRL,
 			 SUN8I_ADC_DIG_CTRL_ENDA, 0),
 
-	/* Analog DAC AIF */
+	/* Audio interface inputs */
 	SND_SOC_DAPM_AIF_IN("AIF1 Slot 0 Left", "Playback", 0,
 			    SUN8I_AIF1_DACDAT_CTRL,
 			    SUN8I_AIF1_DACDAT_CTRL_AIF1_DA0L_ENA, 0),
@@ -397,13 +397,13 @@ static const struct snd_soc_dapm_widget sun8i_codec_dapm_widgets[] = {
 			    SUN8I_AIF1_DACDAT_CTRL,
 			    SUN8I_AIF1_DACDAT_CTRL_AIF1_DA0R_ENA, 0),
 
-	/* Analog ADC AIF */
-	SND_SOC_DAPM_AIF_IN("AIF1 Slot 0 Left ADC", "Capture", 0,
-			    SUN8I_AIF1_ADCDAT_CTRL,
-			    SUN8I_AIF1_ADCDAT_CTRL_AIF1_DA0L_ENA, 0),
-	SND_SOC_DAPM_AIF_IN("AIF1 Slot 0 Right ADC", "Capture", 0,
-			    SUN8I_AIF1_ADCDAT_CTRL,
-			    SUN8I_AIF1_ADCDAT_CTRL_AIF1_DA0R_ENA, 0),
+	/* Audio interface outputs */
+	SND_SOC_DAPM_AIF_OUT("AIF1 Slot 0 Left Out", "Capture", 0,
+			     SUN8I_AIF1_ADCDAT_CTRL,
+			     SUN8I_AIF1_ADCDAT_CTRL_AIF1_DA0L_ENA, 0),
+	SND_SOC_DAPM_AIF_OUT("AIF1 Slot 0 Right Out", "Capture", 0,
+			     SUN8I_AIF1_ADCDAT_CTRL,
+			     SUN8I_AIF1_ADCDAT_CTRL_AIF1_DA0R_ENA, 0),
 
 	/* Digital Mixers */
 	SOC_MIXER_ARRAY("Left Digital DAC Mixer", SND_SOC_NOPM, 0, 0,
@@ -488,8 +488,8 @@ static const struct snd_soc_dapm_route sun8i_codec_dapm_routes[] = {
 	  "ADC Digital" },
 
 	/* AIF1 Slot 0 Output Routes */
-	{ "AIF1 Slot 0 Left ADC", NULL, "AIF1 Slot 0 Left Mixer" },
-	{ "AIF1 Slot 0 Right ADC", NULL, "AIF1 Slot 0 Right Mixer" },
+	{ "AIF1 Slot 0 Left Out", NULL, "AIF1 Slot 0 Left Mixer" },
+	{ "AIF1 Slot 0 Right Out", NULL, "AIF1 Slot 0 Right Mixer" },
 };
 
 static const struct snd_soc_dai_ops sun8i_codec_dai_ops = {
