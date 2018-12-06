@@ -165,10 +165,10 @@
 		simple-audio-card,mclk-fs = <128>;
 		simple-audio-card,aux-devs = <&codec_analog>;
 		simple-audio-card,routing =
-				"Left DAC", "AIF1 Slot 0 Left",
-				"Right DAC", "AIF1 Slot 0 Right",
-				"AIF1 Slot 0 Left ADC", "Left ADC",
-				"AIF1 Slot 0 Right ADC", "Right ADC";
+				"Left DAC", "DAC Digital",
+				"Right DAC", "DAC Digital",
+				"ADC Digital", "Left ADC",
+				"ADC Digital", "Right ADC";
 		status = "disabled";
 
 		cpudai: simple-audio-card,cpu {
