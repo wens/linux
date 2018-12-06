@@ -198,6 +198,8 @@
 		"Right DAC", "DAC Digital",
 		"HP", "HPCOM",
 		"Headphone Jack", "HP",
+		"ADC Digital", "Left ADC",
+		"ADC Digital", "Right ADC",
 		"MIC1", "Microphone Jack",
 		"Microphone Jack", "MBIAS";
 	status = "okay";

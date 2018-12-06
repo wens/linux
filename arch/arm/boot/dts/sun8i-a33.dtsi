@@ -190,7 +190,9 @@
 		simple-audio-card,aux-devs = <&codec_analog>;
 		simple-audio-card,routing =
 			"Left DAC", "DAC Digital",
-			"Right DAC", "DAC Digital";
+			"Right DAC", "DAC Digital",
+			"ADC Digital", "Left ADC",
+			"ADC Digital", "Right ADC";
 		status = "disabled";
 
 		simple-audio-card,cpu {
