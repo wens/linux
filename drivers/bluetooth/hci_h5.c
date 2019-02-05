@@ -28,6 +28,7 @@
 #include <linux/mod_devicetable.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/regulator/consumer.h>
 #include <linux/serdev.h>
 #include <linux/skbuff.h>
 
@@ -111,6 +112,9 @@ struct h5 {
 
 	struct gpio_desc *enable_gpio;
 	struct gpio_desc *device_wake_gpio;
+
+	struct regulator *vbat_regulator;
+	struct regulator *vddio_regulator;
 };
 
 struct h5_vnd {
@@ -837,6 +841,14 @@ static int h5_serdev_probe(struct serdev_device *serdev)
 	if (IS_ERR(h5->device_wake_gpio))
 		return PTR_ERR(h5->device_wake_gpio);
 
+	h5->vbat_regulator = devm_regulator_get(dev, "vbat");
+	if (IS_ERR(h5->vbat_regulator))
+		return PTR_ERR(h5->vbat_regulator);
+
+	h5->vddio_regulator = devm_regulator_get(dev, "vddio");
+	if (IS_ERR(h5->vddio_regulator))
+		return PTR_ERR(h5->vddio_regulator);
+
 	return hci_uart_register_device(&h5->serdev_hu, &h5p);
 }
 
@@ -918,10 +930,16 @@ out_free:
 
 static void h5_btrtl_open(struct h5 *h5)
 {
+	int ret;
+
 	/* Devices always start with these fixed parameters */
 	serdev_device_set_flow_control(h5->hu->serdev, false);
 	serdev_device_set_parity(h5->hu->serdev, SERDEV_PARITY_EVEN);
 	serdev_device_set_baudrate(h5->hu->serdev, 115200);
+
+	/* Ignore return values for now */
+	ret = regulator_enable(h5->vddio_regulator);
+	ret = regulator_enable(h5->vbat_regulator);
 
 	/* The controller needs up to 500ms to wakeup */
 	gpiod_set_value_cansleep(h5->enable_gpio, 1);
@@ -933,6 +951,8 @@ static void h5_btrtl_close(struct h5 *h5)
 {
 	gpiod_set_value_cansleep(h5->device_wake_gpio, 0);
 	gpiod_set_value_cansleep(h5->enable_gpio, 0);
+	regulator_disable(h5->vbat_regulator);
+	regulator_disable(h5->vddio_regulator);
 }
 
 /* Suspend/resume support. On many devices the RTL BT device loses power during
