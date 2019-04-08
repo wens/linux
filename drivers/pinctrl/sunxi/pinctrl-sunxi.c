@@ -530,14 +530,10 @@ static int sunxi_pconf_group_get(struct pinctrl_dev *pctldev,
 	return sunxi_pconf_get(pctldev, g->pin, config);
 }
 
-static int sunxi_pconf_group_set(struct pinctrl_dev *pctldev,
-				 unsigned group,
-				 unsigned long *configs,
-				 unsigned num_configs)
+static int sunxi_pconf_set(struct pinctrl_dev *pctldev, unsigned pin,
+			   unsigned long *configs, unsigned num_configs)
 {
 	struct sunxi_pinctrl *pctl = pinctrl_dev_get_drvdata(pctldev);
-	struct sunxi_pinctrl_group *g = &pctl->groups[group];
-	unsigned pin = g->pin - pctl->desc->pin_base;
 	int i;
 
 	for (i = 0; i < num_configs; i++) {
@@ -596,9 +592,20 @@ static int sunxi_pconf_group_set(struct pinctrl_dev *pctldev,
 	return 0;
 }
 
+static int sunxi_pconf_group_set(struct pinctrl_dev *pctldev, unsigned group,
+				 unsigned long *configs, unsigned num_configs)
+{
+	struct sunxi_pinctrl *pctl = pinctrl_dev_get_drvdata(pctldev);
+	struct sunxi_pinctrl_group *g = &pctl->groups[group];
+
+	/* We only support 1 pin per group. Chain it to the pin callback */
+	return sunxi_pconf_set(pctldev, g->pin, configs, num_configs);
+}
+
 static const struct pinconf_ops sunxi_pconf_ops = {
 	.is_generic		= true,
 	.pin_config_get		= sunxi_pconf_get,
+	.pin_config_set		= sunxi_pconf_set,
 	.pin_config_group_get	= sunxi_pconf_group_get,
 	.pin_config_group_set	= sunxi_pconf_group_set,
 };
@@ -1443,16 +1450,17 @@ int sunxi_pinctrl_init_with_variant(struct platform_device *pdev,
 
 	last_pin = pctl->desc->pins[pctl->desc->npins - 1].pin.number;
 	pctl->chip->owner = THIS_MODULE;
-	pctl->chip->request = gpiochip_generic_request,
-	pctl->chip->free = gpiochip_generic_free,
-	pctl->chip->direction_input = sunxi_pinctrl_gpio_direction_input,
-	pctl->chip->direction_output = sunxi_pinctrl_gpio_direction_output,
-	pctl->chip->get = sunxi_pinctrl_gpio_get,
-	pctl->chip->set = sunxi_pinctrl_gpio_set,
-	pctl->chip->of_xlate = sunxi_pinctrl_gpio_of_xlate,
-	pctl->chip->to_irq = sunxi_pinctrl_gpio_to_irq,
-	pctl->chip->of_gpio_n_cells = 3,
-	pctl->chip->can_sleep = false,
+	pctl->chip->request = gpiochip_generic_request;
+	pctl->chip->free = gpiochip_generic_free;
+	pctl->chip->set_config = gpiochip_generic_config;
+	pctl->chip->direction_input = sunxi_pinctrl_gpio_direction_input;
+	pctl->chip->direction_output = sunxi_pinctrl_gpio_direction_output;
+	pctl->chip->get = sunxi_pinctrl_gpio_get;
+	pctl->chip->set = sunxi_pinctrl_gpio_set;
+	pctl->chip->of_xlate = sunxi_pinctrl_gpio_of_xlate;
+	pctl->chip->to_irq = sunxi_pinctrl_gpio_to_irq;
+	pctl->chip->of_gpio_n_cells = 3;
+	pctl->chip->can_sleep = false;
 	pctl->chip->ngpio = round_up(last_pin, PINS_PER_BANK) -
 			    pctl->desc->pin_base;
 	pctl->chip->label = dev_name(&pdev->dev);
