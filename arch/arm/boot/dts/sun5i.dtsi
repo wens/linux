@@ -189,7 +189,7 @@
 			#dma-cells = <2>;
 		};
 
-		nfc: nand@1c03000 {
+		nfc: nand-controller@1c03000 {
 			compatible = "allwinner,sun4i-a10-nand";
 			reg = <0x01c03000 0x1000>;
 			interrupts = <37>;
@@ -238,11 +238,8 @@
 			status = "disabled";
 
 			port {
-				#address-cells = <1>;
-				#size-cells = <0>;
 
-				tve0_in_tcon0: endpoint@0 {
-					reg = <0>;
+				tve0_in_tcon0: endpoint {
 					remote-endpoint = <&tcon0_out_tve0>;
 				};
 			};
@@ -278,6 +275,7 @@
 				      "tcon-ch0",
 				      "tcon-ch1";
 			clock-output-names = "tcon-pixel-clock";
+			#clock-cells = <0>;
 			status = "disabled";
 
 			ports {
@@ -285,12 +283,9 @@
 				#size-cells = <0>;
 
 				tcon0_in: port@0 {
-					#address-cells = <1>;
-					#size-cells = <0>;
 					reg = <0>;
 
-					tcon0_in_be0: endpoint@0 {
-						reg = <0>;
+					tcon0_in_be0: endpoint {
 						remote-endpoint = <&be0_out_tcon0>;
 					};
 				};
@@ -365,13 +360,14 @@
 			phy-names = "usb";
 			extcon = <&usbphy 0>;
 			allwinner,sram = <&otg_sram 1>;
+			dr_mode = "otg";
 			status = "disabled";
 		};
 
 		usbphy: phy@1c13400 {
 			#phy-cells = <1>;
 			compatible = "allwinner,sun5i-a13-usb-phy";
-			reg = <0x01c13400 0x10 0x01c14800 0x4>;
+			reg = <0x01c13400 0x10>, <0x01c14800 0x4>;
 			reg-names = "phy_ctrl", "pmu1";
 			clocks = <&ccu CLK_USB_PHY0>;
 			clock-names = "usb_phy";
@@ -734,12 +730,9 @@
 				#size-cells = <0>;
 
 				fe0_out: port@1 {
-					#address-cells = <1>;
-					#size-cells = <0>;
 					reg = <1>;
 
-					fe0_out_be0: endpoint@0 {
-						reg = <0>;
+					fe0_out_be0: endpoint {
 						remote-endpoint = <&be0_in_fe0>;
 					};
 				};
@@ -765,23 +758,17 @@
 				#size-cells = <0>;
 
 				be0_in: port@0 {
-					#address-cells = <1>;
-					#size-cells = <0>;
 					reg = <0>;
 
-					be0_in_fe0: endpoint@0 {
-						reg = <0>;
+					be0_in_fe0: endpoint {
 						remote-endpoint = <&fe0_out_be0>;
 					};
 				};
 
 				be0_out: port@1 {
-					#address-cells = <1>;
-					#size-cells = <0>;
 					reg = <1>;
 
-					be0_out_tcon0: endpoint@0 {
-						reg = <0>;
+					be0_out_tcon0: endpoint {
 						remote-endpoint = <&tcon0_in_be0>;
 					};
 				};
