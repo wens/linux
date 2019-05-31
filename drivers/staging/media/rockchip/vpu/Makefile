@@ -3,9 +3,12 @@ obj-$(CONFIG_VIDEO_ROCKCHIP_VPU) += rockchip-vpu.o
 
 rockchip-vpu-y += \
 		rockchip_vpu_drv.o \
-		rockchip_vpu_enc.o \
+		rockchip_vpu_v4l2.o \
 		rk3288_vpu_hw.o \
 		rk3288_vpu_hw_jpeg_enc.o \
+		rk3288_vpu_hw_mpeg2_dec.o \
 		rk3399_vpu_hw.o \
 		rk3399_vpu_hw_jpeg_enc.o \
-		rockchip_vpu_jpeg.o
+		rk3399_vpu_hw_mpeg2_dec.o \
+		rockchip_vpu_jpeg.o \
+		rockchip_vpu_mpeg2.o

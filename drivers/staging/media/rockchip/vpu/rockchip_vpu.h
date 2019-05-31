@@ -27,6 +27,10 @@
 
 #define ROCKCHIP_VPU_MAX_CLOCKS		4
 
+#define MPEG2_MB_DIM			16
+#define MPEG2_MB_WIDTH(w)		DIV_ROUND_UP(w, MPEG2_MB_DIM)
+#define MPEG2_MB_HEIGHT(h)		DIV_ROUND_UP(h, MPEG2_MB_DIM)
+
 #define JPEG_MB_DIM			16
 #define JPEG_MB_WIDTH(w)		DIV_ROUND_UP(w, JPEG_MB_DIM)
 #define JPEG_MB_HEIGHT(h)		DIV_ROUND_UP(h, JPEG_MB_DIM)
@@ -34,29 +38,41 @@
 struct rockchip_vpu_ctx;
 struct rockchip_vpu_codec_ops;
 
-#define RK_VPU_CODEC_JPEG BIT(0)
+#define RK_VPU_JPEG_ENCODER	BIT(0)
+#define RK_VPU_ENCODERS		0x0000ffff
+
+#define RK_VPU_MPEG2_DECODER	BIT(16)
+#define RK_VPU_DECODERS		0xffff0000
 
 /**
  * struct rockchip_vpu_variant - information about VPU hardware variant
  *
  * @enc_offset:			Offset from VPU base to encoder registers.
+ * @dec_offset:			Offset from VPU base to decoder registers.
  * @enc_fmts:			Encoder formats.
  * @num_enc_fmts:		Number of encoder formats.
+ * @dec_fmts:			Decoder formats.
+ * @num_dec_fmts:		Number of decoder formats.
  * @codec:			Supported codecs
  * @codec_ops:			Codec ops.
  * @init:			Initialize hardware.
  * @vepu_irq:			encoder interrupt handler
+ * @vdpu_irq:			decoder interrupt handler
  * @clk_names:			array of clock names
  * @num_clocks:			number of clocks in the array
  */
 struct rockchip_vpu_variant {
 	unsigned int enc_offset;
+	unsigned int dec_offset;
 	const struct rockchip_vpu_fmt *enc_fmts;
 	unsigned int num_enc_fmts;
+	const struct rockchip_vpu_fmt *dec_fmts;
+	unsigned int num_dec_fmts;
 	unsigned int codec;
 	const struct rockchip_vpu_codec_ops *codec_ops;
 	int (*init)(struct rockchip_vpu_dev *vpu);
 	irqreturn_t (*vepu_irq)(int irq, void *priv);
+	irqreturn_t (*vdpu_irq)(int irq, void *priv);
 	const char *clk_names[ROCKCHIP_VPU_MAX_CLOCKS];
 	int num_clocks;
 };
@@ -65,24 +81,75 @@ struct rockchip_vpu_variant {
  * enum rockchip_vpu_codec_mode - codec operating mode.
  * @RK_VPU_MODE_NONE:  No operating mode. Used for RAW video formats.
  * @RK_VPU_MODE_JPEG_ENC: JPEG encoder.
+ * @RK_VPU_MODE_MPEG2_DEC: MPEG-2 decoder.
  */
 enum rockchip_vpu_codec_mode {
 	RK_VPU_MODE_NONE = -1,
 	RK_VPU_MODE_JPEG_ENC,
+	RK_VPU_MODE_MPEG2_DEC,
 };
+
+/*
+ * struct rockchip_vpu_ctrl - helper type to declare supported controls
+ * @id:		V4L2 control ID (V4L2_CID_xxx)
+ * @codec:	codec id this control belong to (RK_VPU_JPEG_ENCODER, etc.)
+ * @cfg:	control configuration
+ */
+struct rockchip_vpu_ctrl {
+	unsigned int id;
+	unsigned int codec;
+	struct v4l2_ctrl_config cfg;
+};
+
+/*
+ * struct rockchip_vpu_func - rockchip VPU functionality
+ *
+ * @id:			processing functionality ID (can be
+ *			%MEDIA_ENT_F_PROC_VIDEO_ENCODER or
+ *			%MEDIA_ENT_F_PROC_VIDEO_DECODER)
+ * @vdev:		&struct video_device that exposes the encoder or
+ *			decoder functionality
+ * @source_pad:		&struct media_pad with the source pad.
+ * @sink:		&struct media_entity pointer with the sink entity
+ * @sink_pad:		&struct media_pad with the sink pad.
+ * @proc:		&struct media_entity pointer with the M2M device itself.
+ * @proc_pads:		&struct media_pad with the @proc pads.
+ * @intf_devnode:	&struct media_intf devnode pointer with the interface
+ *			with controls the M2M device.
+ *
+ * Contains everything needed to attach the video device to the media device.
+ */
+struct rockchip_vpu_func {
+	unsigned int id;
+	struct video_device vdev;
+	struct media_pad source_pad;
+	struct media_entity sink;
+	struct media_pad sink_pad;
+	struct media_entity proc;
+	struct media_pad proc_pads[2];
+	struct media_intf_devnode *intf_devnode;
+};
+
+static inline struct rockchip_vpu_func *
+rockchip_vpu_vdev_to_func(struct video_device *vdev)
+{
+	return container_of(vdev, struct rockchip_vpu_func, vdev);
+}
 
 /**
  * struct rockchip_vpu_dev - driver data
  * @v4l2_dev:		V4L2 device to register video devices for.
  * @m2m_dev:		mem2mem device associated to this device.
  * @mdev:		media device associated to this device.
- * @vfd_enc:		Video device for encoder.
+ * @encoder:		encoder functionality.
+ * @decoder:		decoder functionality.
  * @pdev:		Pointer to VPU platform device.
  * @dev:		Pointer to device for convenient logging using
  *			dev_ macros.
  * @clocks:		Array of clock handles.
  * @base:		Mapped address of VPU registers.
  * @enc_base:		Mapped address of VPU encoder register for convenience.
+ * @dec_base:		Mapped address of VPU decoder register for convenience.
  * @vpu_mutex:		Mutex to synchronize V4L2 calls.
  * @irqlock:		Spinlock to synchronize access to data structures
  *			shared with interrupt handlers.
@@ -93,12 +160,14 @@ struct rockchip_vpu_dev {
 	struct v4l2_device v4l2_dev;
 	struct v4l2_m2m_dev *m2m_dev;
 	struct media_device mdev;
-	struct video_device *vfd_enc;
+	struct rockchip_vpu_func *encoder;
+	struct rockchip_vpu_func *decoder;
 	struct platform_device *pdev;
 	struct device *dev;
 	struct clk_bulk_data clocks[ROCKCHIP_VPU_MAX_CLOCKS];
 	void __iomem *base;
 	void __iomem *enc_base;
+	void __iomem *dec_base;
 
 	struct mutex vpu_mutex;	/* video_device lock */
 	spinlock_t irqlock;
@@ -123,11 +192,12 @@ struct rockchip_vpu_dev {
  * @ctrl_handler:	Control handler used to register controls.
  * @jpeg_quality:	User-specified JPEG compression quality.
  *
+ * @buf_finish:		Buffer finish. This depends on encoder or decoder
+ *			context, and it's called right before
+ *			calling v4l2_m2m_job_finish.
  * @codec_ops:		Set of operations related to codec mode.
- *
- * @bounce_dma_addr:	Bounce buffer bus address.
- * @bounce_buf:		Bounce buffer pointer.
- * @bounce_size:	Bounce buffer size.
+ * @jpeg_enc:		JPEG-encoding context.
+ * @mpeg2_dec:		MPEG-2-decoding context.
  */
 struct rockchip_vpu_ctx {
 	struct rockchip_vpu_dev *dev;
@@ -144,11 +214,17 @@ struct rockchip_vpu_ctx {
 	struct v4l2_ctrl_handler ctrl_handler;
 	int jpeg_quality;
 
+	int (*buf_finish)(struct rockchip_vpu_ctx *ctx,
+			  struct vb2_buffer *buf,
+			  unsigned int bytesused);
+
 	const struct rockchip_vpu_codec_ops *codec_ops;
 
-	dma_addr_t bounce_dma_addr;
-	void *bounce_buf;
-	size_t bounce_size;
+	/* Specific for particular codec modes. */
+	union {
+		struct rockchip_vpu_jpeg_enc_hw_ctx jpeg_enc;
+		struct rockchip_vpu_mpeg2_dec_hw_ctx mpeg2_dec;
+	};
 };
 
 /**
@@ -228,5 +304,31 @@ static inline u32 vepu_read(struct rockchip_vpu_dev *vpu, u32 reg)
 	vpu_debug(6, "0x%04x = 0x%08x\n", reg / 4, val);
 	return val;
 }
+
+static inline void vdpu_write_relaxed(struct rockchip_vpu_dev *vpu,
+				      u32 val, u32 reg)
+{
+	vpu_debug(6, "0x%04x = 0x%08x\n", reg / 4, val);
+	writel_relaxed(val, vpu->dec_base + reg);
+}
+
+static inline void vdpu_write(struct rockchip_vpu_dev *vpu, u32 val, u32 reg)
+{
+	vpu_debug(6, "0x%04x = 0x%08x\n", reg / 4, val);
+	writel(val, vpu->dec_base + reg);
+}
+
+static inline u32 vdpu_read(struct rockchip_vpu_dev *vpu, u32 reg)
+{
+	u32 val = readl(vpu->dec_base + reg);
+
+	vpu_debug(6, "0x%04x = 0x%08x\n", reg / 4, val);
+	return val;
+}
+
+bool rockchip_vpu_is_encoder_ctx(const struct rockchip_vpu_ctx *ctx);
+
+void *rockchip_vpu_get_ctrl(struct rockchip_vpu_ctx *ctx, u32 id);
+dma_addr_t rockchip_vpu_get_ref(struct vb2_queue *q, u64 ts);
 
 #endif /* ROCKCHIP_VPU_H_ */

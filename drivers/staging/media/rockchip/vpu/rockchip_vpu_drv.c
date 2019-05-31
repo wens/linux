@@ -24,7 +24,7 @@
 #include <media/videobuf2-core.h>
 #include <media/videobuf2-vmalloc.h>
 
-#include "rockchip_vpu_common.h"
+#include "rockchip_vpu_v4l2.h"
 #include "rockchip_vpu.h"
 #include "rockchip_vpu_hw.h"
 
@@ -35,13 +35,66 @@ module_param_named(debug, rockchip_vpu_debug, int, 0644);
 MODULE_PARM_DESC(debug,
 		 "Debug level - higher value produces more verbose messages");
 
+void *rockchip_vpu_get_ctrl(struct rockchip_vpu_ctx *ctx, u32 id)
+{
+	struct v4l2_ctrl *ctrl;
+
+	ctrl = v4l2_ctrl_find(&ctx->ctrl_handler, id);
+	return ctrl ? ctrl->p_cur.p : NULL;
+}
+
+dma_addr_t rockchip_vpu_get_ref(struct vb2_queue *q, u64 ts)
+{
+	int index;
+
+	index = vb2_find_timestamp(q, ts, 0);
+	if (index >= 0)
+		return vb2_dma_contig_plane_dma_addr(q->bufs[index], 0);
+	return 0;
+}
+
+static int
+rockchip_vpu_enc_buf_finish(struct rockchip_vpu_ctx *ctx,
+			    struct vb2_buffer *buf,
+			    unsigned int bytesused)
+{
+	size_t avail_size;
+
+	avail_size = vb2_plane_size(buf, 0) - ctx->vpu_dst_fmt->header_size;
+	if (bytesused > avail_size)
+		return -EINVAL;
+	/*
+	 * The bounce buffer is only for the JPEG encoder.
+	 * TODO: Rework the JPEG encoder to eliminate the need
+	 * for a bounce buffer.
+	 */
+	if (ctx->jpeg_enc.bounce_buffer.cpu) {
+		memcpy(vb2_plane_vaddr(buf, 0) +
+		       ctx->vpu_dst_fmt->header_size,
+		       ctx->jpeg_enc.bounce_buffer.cpu, bytesused);
+	}
+	buf->planes[0].bytesused =
+		ctx->vpu_dst_fmt->header_size + bytesused;
+	return 0;
+}
+
+static int
+rockchip_vpu_dec_buf_finish(struct rockchip_vpu_ctx *ctx,
+			    struct vb2_buffer *buf,
+			    unsigned int bytesused)
+{
+	/* For decoders set bytesused as per the output picture. */
+	buf->planes[0].bytesused = ctx->dst_fmt.plane_fmt[0].sizeimage;
+	return 0;
+}
+
 static void rockchip_vpu_job_finish(struct rockchip_vpu_dev *vpu,
 				    struct rockchip_vpu_ctx *ctx,
 				    unsigned int bytesused,
 				    enum vb2_buffer_state result)
 {
 	struct vb2_v4l2_buffer *src, *dst;
-	size_t avail_size;
+	int ret;
 
 	pm_runtime_mark_last_busy(vpu->dev);
 	pm_runtime_put_autosuspend(vpu->dev);
@@ -58,28 +111,11 @@ static void rockchip_vpu_job_finish(struct rockchip_vpu_dev *vpu,
 	src->sequence = ctx->sequence_out++;
 	dst->sequence = ctx->sequence_cap++;
 
-	dst->field = src->field;
-	if (src->flags & V4L2_BUF_FLAG_TIMECODE)
-		dst->timecode = src->timecode;
-	dst->vb2_buf.timestamp = src->vb2_buf.timestamp;
-	dst->flags &= ~(V4L2_BUF_FLAG_TSTAMP_SRC_MASK |
-			V4L2_BUF_FLAG_TIMECODE);
-	dst->flags |= src->flags & (V4L2_BUF_FLAG_TSTAMP_SRC_MASK |
-				    V4L2_BUF_FLAG_TIMECODE);
+	v4l2_m2m_buf_copy_metadata(src, dst, true);
 
-	avail_size = vb2_plane_size(&dst->vb2_buf, 0) -
-		     ctx->vpu_dst_fmt->header_size;
-	if (bytesused <= avail_size) {
-		if (ctx->bounce_buf) {
-			memcpy(vb2_plane_vaddr(&dst->vb2_buf, 0) +
-			       ctx->vpu_dst_fmt->header_size,
-			       ctx->bounce_buf, bytesused);
-		}
-		dst->vb2_buf.planes[0].bytesused =
-			ctx->vpu_dst_fmt->header_size + bytesused;
-	} else {
+	ret = ctx->buf_finish(ctx, &dst->vb2_buf, bytesused);
+	if (ret)
 		result = VB2_BUF_STATE_ERROR;
-	}
 
 	v4l2_m2m_buf_done(src, result);
 	v4l2_m2m_buf_done(dst, result);
@@ -137,12 +173,17 @@ err_cancel_job:
 	rockchip_vpu_job_finish(ctx->dev, ctx, 0, VB2_BUF_STATE_ERROR);
 }
 
+bool rockchip_vpu_is_encoder_ctx(const struct rockchip_vpu_ctx *ctx)
+{
+	return ctx->buf_finish == rockchip_vpu_enc_buf_finish;
+}
+
 static struct v4l2_m2m_ops vpu_m2m_ops = {
 	.device_run = device_run,
 };
 
 static int
-enc_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
 {
 	struct rockchip_vpu_ctx *ctx = priv;
 	int ret;
@@ -150,7 +191,7 @@ enc_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
 	src_vq->type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	src_vq->io_modes = VB2_MMAP | VB2_DMABUF;
 	src_vq->drv_priv = ctx;
-	src_vq->ops = &rockchip_vpu_enc_queue_ops;
+	src_vq->ops = &rockchip_vpu_queue_ops;
 	src_vq->mem_ops = &vb2_dma_contig_memops;
 
 	/*
@@ -164,24 +205,32 @@ enc_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
 	src_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	src_vq->lock = &ctx->dev->vpu_mutex;
 	src_vq->dev = ctx->dev->v4l2_dev.dev;
+	src_vq->supports_requests = true;
 
 	ret = vb2_queue_init(src_vq);
 	if (ret)
 		return ret;
 
 	/*
-	 * The CAPTURE queue doesn't need dma memory,
-	 * as the CPU needs to create the JPEG frames,
-	 * from the hardware-produced JPEG payload.
+	 * When encoding, the CAPTURE queue doesn't need dma memory,
+	 * as the CPU needs to create the JPEG frames, from the
+	 * hardware-produced JPEG payload.
 	 *
-	 * For the DMA destination buffer, we use
-	 * a bounce buffer.
+	 * For the DMA destination buffer, we use a bounce buffer.
 	 */
+	if (rockchip_vpu_is_encoder_ctx(ctx)) {
+		dst_vq->mem_ops = &vb2_vmalloc_memops;
+	} else {
+		dst_vq->bidirectional = true;
+		dst_vq->mem_ops = &vb2_dma_contig_memops;
+		dst_vq->dma_attrs = DMA_ATTR_ALLOC_SINGLE_PAGES |
+				    DMA_ATTR_NO_KERNEL_MAPPING;
+	}
+
 	dst_vq->type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	dst_vq->io_modes = VB2_MMAP | VB2_DMABUF;
 	dst_vq->drv_priv = ctx;
-	dst_vq->ops = &rockchip_vpu_enc_queue_ops;
-	dst_vq->mem_ops = &vb2_vmalloc_memops;
+	dst_vq->ops = &rockchip_vpu_queue_ops;
 	dst_vq->buf_struct_size = sizeof(struct v4l2_m2m_buffer);
 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	dst_vq->lock = &ctx->dev->vpu_mutex;
@@ -214,22 +263,63 @@ static const struct v4l2_ctrl_ops rockchip_vpu_ctrl_ops = {
 	.s_ctrl = rockchip_vpu_s_ctrl,
 };
 
+static struct rockchip_vpu_ctrl controls[] = {
+	{
+		.id = V4L2_CID_JPEG_COMPRESSION_QUALITY,
+		.codec = RK_VPU_JPEG_ENCODER,
+		.cfg = {
+			.min = 5,
+			.max = 100,
+			.step = 1,
+			.def = 50,
+		},
+	}, {
+		.id = V4L2_CID_MPEG_VIDEO_MPEG2_SLICE_PARAMS,
+		.codec = RK_VPU_MPEG2_DECODER,
+		.cfg = {
+			.elem_size = sizeof(struct v4l2_ctrl_mpeg2_slice_params),
+		},
+	}, {
+		.id = V4L2_CID_MPEG_VIDEO_MPEG2_QUANTIZATION,
+		.codec = RK_VPU_MPEG2_DECODER,
+		.cfg = {
+			.elem_size = sizeof(struct v4l2_ctrl_mpeg2_quantization),
+		},
+	},
+};
+
 static int rockchip_vpu_ctrls_setup(struct rockchip_vpu_dev *vpu,
-				    struct rockchip_vpu_ctx *ctx)
+				    struct rockchip_vpu_ctx *ctx,
+				    int allowed_codecs)
 {
-	v4l2_ctrl_handler_init(&ctx->ctrl_handler, 1);
-	if (vpu->variant->codec & RK_VPU_CODEC_JPEG) {
-		v4l2_ctrl_new_std(&ctx->ctrl_handler, &rockchip_vpu_ctrl_ops,
-				  V4L2_CID_JPEG_COMPRESSION_QUALITY,
-				  5, 100, 1, 50);
+	int i, num_ctrls = ARRAY_SIZE(controls);
+
+	v4l2_ctrl_handler_init(&ctx->ctrl_handler, num_ctrls);
+
+	for (i = 0; i < num_ctrls; i++) {
+		if (!(allowed_codecs & controls[i].codec))
+			continue;
+		if (!controls[i].cfg.elem_size) {
+			v4l2_ctrl_new_std(&ctx->ctrl_handler,
+					  &rockchip_vpu_ctrl_ops,
+					  controls[i].id, controls[i].cfg.min,
+					  controls[i].cfg.max,
+					  controls[i].cfg.step,
+					  controls[i].cfg.def);
+		} else {
+			controls[i].cfg.id = controls[i].id;
+			v4l2_ctrl_new_custom(&ctx->ctrl_handler,
+					     &controls[i].cfg, NULL);
+		}
+
 		if (ctx->ctrl_handler.error) {
-			vpu_err("Adding JPEG control failed %d\n",
+			vpu_err("Adding control (%d) failed %d\n",
+				controls[i].id,
 				ctx->ctrl_handler.error);
 			v4l2_ctrl_handler_free(&ctx->ctrl_handler);
 			return ctx->ctrl_handler.error;
 		}
 	}
-
 	return v4l2_ctrl_handler_setup(&ctx->ctrl_handler);
 }
 
@@ -241,8 +331,9 @@ static int rockchip_vpu_open(struct file *filp)
 {
 	struct rockchip_vpu_dev *vpu = video_drvdata(filp);
 	struct video_device *vdev = video_devdata(filp);
+	struct rockchip_vpu_func *func = rockchip_vpu_vdev_to_func(vdev);
 	struct rockchip_vpu_ctx *ctx;
-	int ret;
+	int allowed_codecs, ret;
 
 	/*
 	 * We do not need any extra locking here, because we operate only
@@ -258,11 +349,19 @@ static int rockchip_vpu_open(struct file *filp)
 		return -ENOMEM;
 
 	ctx->dev = vpu;
-	if (vdev == vpu->vfd_enc)
+	if (func->id == MEDIA_ENT_F_PROC_VIDEO_ENCODER) {
+		allowed_codecs = vpu->variant->codec & RK_VPU_ENCODERS;
+		ctx->buf_finish = rockchip_vpu_enc_buf_finish;
 		ctx->fh.m2m_ctx = v4l2_m2m_ctx_init(vpu->m2m_dev, ctx,
-						    &enc_queue_init);
-	else
+						    queue_init);
+	} else if (func->id == MEDIA_ENT_F_PROC_VIDEO_DECODER) {
+		allowed_codecs = vpu->variant->codec & RK_VPU_DECODERS;
+		ctx->buf_finish = rockchip_vpu_dec_buf_finish;
+		ctx->fh.m2m_ctx = v4l2_m2m_ctx_init(vpu->m2m_dev, ctx,
+						    queue_init);
+	} else {
 		ctx->fh.m2m_ctx = ERR_PTR(-ENODEV);
+	}
 	if (IS_ERR(ctx->fh.m2m_ctx)) {
 		ret = PTR_ERR(ctx->fh.m2m_ctx);
 		kfree(ctx);
@@ -273,12 +372,9 @@ static int rockchip_vpu_open(struct file *filp)
 	filp->private_data = &ctx->fh;
 	v4l2_fh_add(&ctx->fh);
 
-	if (vdev == vpu->vfd_enc) {
-		rockchip_vpu_enc_reset_dst_fmt(vpu, ctx);
-		rockchip_vpu_enc_reset_src_fmt(vpu, ctx);
-	}
+	rockchip_vpu_reset_fmts(ctx);
 
-	ret = rockchip_vpu_ctrls_setup(vpu, ctx);
+	ret = rockchip_vpu_ctrls_setup(vpu, ctx, allowed_codecs);
 	if (ret) {
 		vpu_err("Failed to set up controls\n");
 		goto err_fh_free;
@@ -328,51 +424,248 @@ static const struct of_device_id of_rockchip_vpu_match[] = {
 };
 MODULE_DEVICE_TABLE(of, of_rockchip_vpu_match);
 
-static int rockchip_vpu_video_device_register(struct rockchip_vpu_dev *vpu)
+static int rockchip_vpu_register_entity(struct media_device *mdev,
+					struct media_entity *entity,
+					const char *entity_name,
+					struct media_pad *pads, int num_pads,
+					int function,
+					struct video_device *vdev)
+{
+	char *name;
+	int ret;
+
+	entity->obj_type = MEDIA_ENTITY_TYPE_BASE;
+	if (function == MEDIA_ENT_F_IO_V4L) {
+		entity->info.dev.major = VIDEO_MAJOR;
+		entity->info.dev.minor = vdev->minor;
+	}
+
+	name = devm_kasprintf(mdev->dev, GFP_KERNEL, "%s-%s", vdev->name,
+			      entity_name);
+	if (!name)
+		return -ENOMEM;
+
+	entity->name = name;
+	entity->function = function;
+
+	ret = media_entity_pads_init(entity, num_pads, pads);
+	if (ret)
+		return ret;
+
+	ret = media_device_register_entity(mdev, entity);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int rockchip_attach_func(struct rockchip_vpu_dev *vpu,
+				struct rockchip_vpu_func *func)
+{
+	struct media_device *mdev = &vpu->mdev;
+	struct media_link *link;
+	int ret;
+
+	/* Create the three encoder entities with their pads */
+	func->source_pad.flags = MEDIA_PAD_FL_SOURCE;
+	ret = rockchip_vpu_register_entity(mdev, &func->vdev.entity,
+					   "source", &func->source_pad, 1,
+					   MEDIA_ENT_F_IO_V4L, &func->vdev);
+	if (ret)
+		return ret;
+
+	func->proc_pads[0].flags = MEDIA_PAD_FL_SINK;
+	func->proc_pads[1].flags = MEDIA_PAD_FL_SOURCE;
+	ret = rockchip_vpu_register_entity(mdev, &func->proc, "proc",
+					   func->proc_pads, 2, func->id,
+					   &func->vdev);
+	if (ret)
+		goto err_rel_entity0;
+
+	func->sink_pad.flags = MEDIA_PAD_FL_SINK;
+	ret = rockchip_vpu_register_entity(mdev, &func->sink, "sink",
+					   &func->sink_pad, 1,
+					   MEDIA_ENT_F_IO_V4L, &func->vdev);
+	if (ret)
+		goto err_rel_entity1;
+
+	/* Connect the three entities */
+	ret = media_create_pad_link(&func->vdev.entity, 0, &func->proc, 1,
+				    MEDIA_LNK_FL_IMMUTABLE |
+				    MEDIA_LNK_FL_ENABLED);
+	if (ret)
+		goto err_rel_entity2;
+
+	ret = media_create_pad_link(&func->proc, 0, &func->sink, 0,
+				    MEDIA_LNK_FL_IMMUTABLE |
+				    MEDIA_LNK_FL_ENABLED);
+	if (ret)
+		goto err_rm_links0;
+
+	/* Create video interface */
+	func->intf_devnode = media_devnode_create(mdev, MEDIA_INTF_T_V4L_VIDEO,
+						  0, VIDEO_MAJOR,
+						  func->vdev.minor);
+	if (!func->intf_devnode) {
+		ret = -ENOMEM;
+		goto err_rm_links1;
+	}
+
+	/* Connect the two DMA engines to the interface */
+	link = media_create_intf_link(&func->vdev.entity,
+				      &func->intf_devnode->intf,
+				      MEDIA_LNK_FL_IMMUTABLE |
+				      MEDIA_LNK_FL_ENABLED);
+	if (!link) {
+		ret = -ENOMEM;
+		goto err_rm_devnode;
+	}
+
+	link = media_create_intf_link(&func->sink, &func->intf_devnode->intf,
+				      MEDIA_LNK_FL_IMMUTABLE |
+				      MEDIA_LNK_FL_ENABLED);
+	if (!link) {
+		ret = -ENOMEM;
+		goto err_rm_devnode;
+	}
+	return 0;
+
+err_rm_devnode:
+	media_devnode_remove(func->intf_devnode);
+
+err_rm_links1:
+	media_entity_remove_links(&func->sink);
+
+err_rm_links0:
+	media_entity_remove_links(&func->proc);
+	media_entity_remove_links(&func->vdev.entity);
+
+err_rel_entity2:
+	media_device_unregister_entity(&func->sink);
+
+err_rel_entity1:
+	media_device_unregister_entity(&func->proc);
+
+err_rel_entity0:
+	media_device_unregister_entity(&func->vdev.entity);
+	return ret;
+}
+
+static void rockchip_detach_func(struct rockchip_vpu_func *func)
+{
+	media_devnode_remove(func->intf_devnode);
+	media_entity_remove_links(&func->sink);
+	media_entity_remove_links(&func->proc);
+	media_entity_remove_links(&func->vdev.entity);
+	media_device_unregister_entity(&func->sink);
+	media_device_unregister_entity(&func->proc);
+	media_device_unregister_entity(&func->vdev.entity);
+}
+
+static int rockchip_vpu_add_func(struct rockchip_vpu_dev *vpu,
+				 unsigned int funcid)
 {
 	const struct of_device_id *match;
+	struct rockchip_vpu_func *func;
 	struct video_device *vfd;
-	int function, ret;
+	int ret;
 
 	match = of_match_node(of_rockchip_vpu_match, vpu->dev->of_node);
-	vfd = video_device_alloc();
-	if (!vfd) {
+	func = devm_kzalloc(vpu->dev, sizeof(*func), GFP_KERNEL);
+	if (!func) {
 		v4l2_err(&vpu->v4l2_dev, "Failed to allocate video device\n");
 		return -ENOMEM;
 	}
 
+	func->id = funcid;
+
+	vfd = &func->vdev;
 	vfd->fops = &rockchip_vpu_fops;
-	vfd->release = video_device_release;
+	vfd->release = video_device_release_empty;
 	vfd->lock = &vpu->vpu_mutex;
 	vfd->v4l2_dev = &vpu->v4l2_dev;
 	vfd->vfl_dir = VFL_DIR_M2M;
 	vfd->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M_MPLANE;
-	vfd->ioctl_ops = &rockchip_vpu_enc_ioctl_ops;
-	snprintf(vfd->name, sizeof(vfd->name), "%s-enc", match->compatible);
-	vpu->vfd_enc = vfd;
+	vfd->ioctl_ops = &rockchip_vpu_ioctl_ops;
+	snprintf(vfd->name, sizeof(vfd->name), "%s-%s", match->compatible,
+		 funcid == MEDIA_ENT_F_PROC_VIDEO_ENCODER ? "enc" : "dec");
+
+	if (funcid == MEDIA_ENT_F_PROC_VIDEO_ENCODER)
+		vpu->encoder = func;
+	else
+		vpu->decoder = func;
+
 	video_set_drvdata(vfd, vpu);
 
 	ret = video_register_device(vfd, VFL_TYPE_GRABBER, -1);
 	if (ret) {
 		v4l2_err(&vpu->v4l2_dev, "Failed to register video device\n");
-		goto err_free_dev;
+		return ret;
 	}
+
+	ret = rockchip_attach_func(vpu, func);
+	if (ret) {
+		v4l2_err(&vpu->v4l2_dev,
+			 "Failed to attach functionality to the media device\n");
+		goto err_unreg_dev;
+	}
+
 	v4l2_info(&vpu->v4l2_dev, "registered as /dev/video%d\n", vfd->num);
 
-	function = MEDIA_ENT_F_PROC_VIDEO_ENCODER;
-	ret = v4l2_m2m_register_media_controller(vpu->m2m_dev, vfd, function);
-	if (ret) {
-		v4l2_err(&vpu->v4l2_dev, "Failed to init mem2mem media controller\n");
-		goto err_unreg_video;
-	}
 	return 0;
 
-err_unreg_video:
+err_unreg_dev:
 	video_unregister_device(vfd);
-err_free_dev:
-	video_device_release(vfd);
 	return ret;
 }
+
+static int rockchip_vpu_add_enc_func(struct rockchip_vpu_dev *vpu)
+{
+	if (!vpu->variant->enc_fmts)
+		return 0;
+
+	return rockchip_vpu_add_func(vpu, MEDIA_ENT_F_PROC_VIDEO_ENCODER);
+}
+
+static int rockchip_vpu_add_dec_func(struct rockchip_vpu_dev *vpu)
+{
+	if (!vpu->variant->dec_fmts)
+		return 0;
+
+	return rockchip_vpu_add_func(vpu, MEDIA_ENT_F_PROC_VIDEO_DECODER);
+}
+
+static void rockchip_vpu_remove_func(struct rockchip_vpu_dev *vpu,
+				     unsigned int funcid)
+{
+	struct rockchip_vpu_func *func;
+
+	if (funcid == MEDIA_ENT_F_PROC_VIDEO_ENCODER)
+		func = vpu->encoder;
+	else
+		func = vpu->decoder;
+
+	if (!func)
+		return;
+
+	rockchip_detach_func(func);
+	video_unregister_device(&func->vdev);
+}
+
+static void rockchip_vpu_remove_enc_func(struct rockchip_vpu_dev *vpu)
+{
+	rockchip_vpu_remove_func(vpu, MEDIA_ENT_F_PROC_VIDEO_ENCODER);
+}
+
+static void rockchip_vpu_remove_dec_func(struct rockchip_vpu_dev *vpu)
+{
+	rockchip_vpu_remove_func(vpu, MEDIA_ENT_F_PROC_VIDEO_DECODER);
+}
+
+static const struct media_device_ops rockchip_m2m_media_ops = {
+	.req_validate = vb2_request_validate,
+	.req_queue = v4l2_m2m_request_queue,
+};
 
 static int rockchip_vpu_probe(struct platform_device *pdev)
 {
@@ -407,11 +700,29 @@ static int rockchip_vpu_probe(struct platform_device *pdev)
 	if (IS_ERR(vpu->base))
 		return PTR_ERR(vpu->base);
 	vpu->enc_base = vpu->base + vpu->variant->enc_offset;
+	vpu->dec_base = vpu->base + vpu->variant->dec_offset;
 
 	ret = dma_set_coherent_mask(vpu->dev, DMA_BIT_MASK(32));
 	if (ret) {
 		dev_err(vpu->dev, "Could not set DMA coherent mask.\n");
 		return ret;
+	}
+
+	if (vpu->variant->vdpu_irq) {
+		int irq;
+
+		irq = platform_get_irq_byname(vpu->pdev, "vdpu");
+		if (irq <= 0) {
+			dev_err(vpu->dev, "Could not get vdpu IRQ.\n");
+			return -ENXIO;
+		}
+
+		ret = devm_request_irq(vpu->dev, irq, vpu->variant->vdpu_irq,
+				       0, dev_name(vpu->dev), vpu);
+		if (ret) {
+			dev_err(vpu->dev, "Could not request vdpu IRQ.\n");
+			return ret;
+		}
 	}
 
 	if (vpu->variant->vepu_irq) {
@@ -466,26 +777,33 @@ static int rockchip_vpu_probe(struct platform_device *pdev)
 	strscpy(vpu->mdev.bus_info, "platform: " DRIVER_NAME,
 		sizeof(vpu->mdev.model));
 	media_device_init(&vpu->mdev);
+	vpu->mdev.ops = &rockchip_m2m_media_ops;
 	vpu->v4l2_dev.mdev = &vpu->mdev;
 
-	ret = rockchip_vpu_video_device_register(vpu);
+	ret = rockchip_vpu_add_enc_func(vpu);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to register encoder\n");
 		goto err_m2m_rel;
 	}
 
+	ret = rockchip_vpu_add_dec_func(vpu);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to register decoder\n");
+		goto err_rm_enc_func;
+	}
+
 	ret = media_device_register(&vpu->mdev);
 	if (ret) {
 		v4l2_err(&vpu->v4l2_dev, "Failed to register mem2mem media device\n");
-		goto err_video_dev_unreg;
+		goto err_rm_dec_func;
 	}
+
 	return 0;
-err_video_dev_unreg:
-	if (vpu->vfd_enc) {
-		v4l2_m2m_unregister_media_controller(vpu->m2m_dev);
-		video_unregister_device(vpu->vfd_enc);
-		video_device_release(vpu->vfd_enc);
-	}
+
+err_rm_dec_func:
+	rockchip_vpu_remove_dec_func(vpu);
+err_rm_enc_func:
+	rockchip_vpu_remove_enc_func(vpu);
 err_m2m_rel:
 	media_device_cleanup(&vpu->mdev);
 	v4l2_m2m_release(vpu->m2m_dev);
@@ -505,11 +823,8 @@ static int rockchip_vpu_remove(struct platform_device *pdev)
 	v4l2_info(&vpu->v4l2_dev, "Removing %s\n", pdev->name);
 
 	media_device_unregister(&vpu->mdev);
-	if (vpu->vfd_enc) {
-		v4l2_m2m_unregister_media_controller(vpu->m2m_dev);
-		video_unregister_device(vpu->vfd_enc);
-		video_device_release(vpu->vfd_enc);
-	}
+	rockchip_vpu_remove_dec_func(vpu);
+	rockchip_vpu_remove_enc_func(vpu);
 	media_device_cleanup(&vpu->mdev);
 	v4l2_m2m_release(vpu->m2m_dev);
 	v4l2_device_unregister(&vpu->v4l2_dev);
