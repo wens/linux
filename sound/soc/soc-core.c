@@ -228,7 +228,10 @@ static void soc_init_card_debugfs(struct snd_soc_card *card)
 
 static void soc_cleanup_card_debugfs(struct snd_soc_card *card)
 {
+	if (!card->debugfs_card_root)
+		return;
 	debugfs_remove_recursive(card->debugfs_card_root);
+	card->debugfs_card_root = NULL;
 }
 
 static void snd_soc_debugfs_init(void)
@@ -687,6 +690,8 @@ int snd_soc_resume(struct device *dev)
 	struct snd_soc_card *card = dev_get_drvdata(dev);
 	bool bus_control = false;
 	struct snd_soc_pcm_runtime *rtd;
+	struct snd_soc_dai *codec_dai;
+	int i;
 
 	/* If the card is not initialized yet there is nothing to do */
 	if (!card->instantiated)
@@ -694,14 +699,12 @@ int snd_soc_resume(struct device *dev)
 
 	/* activate pins from sleep state */
 	for_each_card_rtds(card, rtd) {
-		struct snd_soc_dai *codec_dai;
 		struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-		int j;
 
 		if (cpu_dai->active)
 			pinctrl_pm_select_default_state(cpu_dai->dev);
 
-		for_each_rtd_codec_dai(rtd, j, codec_dai) {
+		for_each_rtd_codec_dai(rtd, i, codec_dai) {
 			if (codec_dai->active)
 				pinctrl_pm_select_default_state(codec_dai->dev);
 		}
@@ -738,6 +741,18 @@ EXPORT_SYMBOL_GPL(snd_soc_resume);
 static const struct snd_soc_dai_ops null_dai_ops = {
 };
 
+static struct device_node
+*soc_component_to_node(struct snd_soc_component *component)
+{
+	struct device_node *of_node;
+
+	of_node = component->dev->of_node;
+	if (!of_node && component->dev->parent)
+		of_node = component->dev->parent->of_node;
+
+	return of_node;
+}
+
 static struct snd_soc_component *soc_find_component(
 	const struct device_node *of_node, const char *name)
 {
@@ -748,9 +763,7 @@ static struct snd_soc_component *soc_find_component(
 
 	for_each_component(component) {
 		if (of_node) {
-			component_of_node = component->dev->of_node;
-			if (!component_of_node && component->dev->parent)
-				component_of_node = component->dev->parent->of_node;
+			component_of_node = soc_component_to_node(component);
 
 			if (component_of_node == of_node)
 				return component;
@@ -768,9 +781,7 @@ static int snd_soc_is_matching_component(
 {
 	struct device_node *component_of_node;
 
-	component_of_node = component->dev->of_node;
-	if (!component_of_node && component->dev->parent)
-		component_of_node = component->dev->parent->of_node;
+	component_of_node = soc_component_to_node(component);
 
 	if (dlc->of_node && component_of_node != dlc->of_node)
 		return 0;
@@ -878,7 +889,6 @@ static int soc_bind_dai_link(struct snd_soc_card *card,
 	struct snd_soc_dai_link_component *codecs;
 	struct snd_soc_dai_link_component cpu_dai_component;
 	struct snd_soc_component *component;
-	struct snd_soc_dai **codec_dais;
 	int i;
 
 	if (dai_link->ignore)
@@ -907,24 +917,22 @@ static int soc_bind_dai_link(struct snd_soc_card *card,
 	}
 	snd_soc_rtdcom_add(rtd, rtd->cpu_dai->component);
 
-	rtd->num_codecs = dai_link->num_codecs;
-
 	/* Find CODEC from registered CODECs */
-	codec_dais = rtd->codec_dais;
+	rtd->num_codecs = dai_link->num_codecs;
 	for_each_link_codecs(dai_link, i, codecs) {
-		codec_dais[i] = snd_soc_find_dai(codecs);
-		if (!codec_dais[i]) {
+		rtd->codec_dais[i] = snd_soc_find_dai(codecs);
+		if (!rtd->codec_dais[i]) {
 			dev_info(card->dev, "ASoC: CODEC DAI %s not registered\n",
 				 codecs->dai_name);
 			goto _err_defer;
 		}
-		snd_soc_rtdcom_add(rtd, codec_dais[i]->component);
+		snd_soc_rtdcom_add(rtd, rtd->codec_dais[i]->component);
 	}
 
 	/* Single codec links expect codec and codec_dai in runtime data */
-	rtd->codec_dai = codec_dais[0];
+	rtd->codec_dai = rtd->codec_dais[0];
 
-	/* find one from the set of registered platforms */
+	/* Find PLATFORM from registered PLATFORMs */
 	for_each_component(component) {
 		if (!snd_soc_is_matching_component(dai_link->platforms,
 						   component))
@@ -1005,12 +1013,14 @@ static void soc_remove_link_components(struct snd_soc_card *card,
 	struct snd_soc_component *component;
 	struct snd_soc_rtdcom_list *rtdcom;
 
+	mutex_lock(&client_mutex);
 	for_each_rtdcom(rtd, rtdcom) {
 		component = rtdcom->component;
 
 		if (component->driver->remove_order == order)
 			soc_remove_component(component);
 	}
+	mutex_unlock(&client_mutex);
 }
 
 static void soc_remove_dai_links(struct snd_soc_card *card)
@@ -1320,12 +1330,9 @@ EXPORT_SYMBOL_GPL(snd_soc_remove_dai_link);
 
 static void soc_set_of_name_prefix(struct snd_soc_component *component)
 {
-	struct device_node *component_of_node = component->dev->of_node;
+	struct device_node *component_of_node = soc_component_to_node(component);
 	const char *str;
 	int ret;
-
-	if (!component_of_node && component->dev->parent)
-		component_of_node = component->dev->parent->of_node;
 
 	ret = of_property_read_string(component_of_node, "sound-name-prefix",
 				      &str);
@@ -1340,10 +1347,7 @@ static void soc_set_name_prefix(struct snd_soc_card *card,
 
 	for (i = 0; i < card->num_configs && card->codec_conf; i++) {
 		struct snd_soc_codec_conf *map = &card->codec_conf[i];
-		struct device_node *component_of_node = component->dev->of_node;
-
-		if (!component_of_node && component->dev->parent)
-			component_of_node = component->dev->parent->of_node;
+		struct device_node *component_of_node = soc_component_to_node(component);
 
 		if (map->of_node && component_of_node != map->of_node)
 			continue;
@@ -1421,12 +1425,11 @@ static int soc_probe_component(struct snd_soc_card *card,
 				"ASoC: failed to probe component %d\n", ret);
 			goto err_probe;
 		}
-
-		WARN(dapm->idle_bias_off &&
-			dapm->bias_level != SND_SOC_BIAS_OFF,
-			"codec %s can not start from non-off bias with idle_bias_off==1\n",
-			component->name);
 	}
+	WARN(dapm->idle_bias_off &&
+	     dapm->bias_level != SND_SOC_BIAS_OFF,
+	     "codec %s can not start from non-off bias with idle_bias_off==1\n",
+	     component->name);
 
 	/* machine specific init */
 	if (component->init) {
@@ -2037,8 +2040,10 @@ match:
 static int soc_cleanup_card_resources(struct snd_soc_card *card)
 {
 	/* free the ALSA card at first; this syncs with pending operations */
-	if (card->snd_card)
+	if (card->snd_card) {
 		snd_card_free(card->snd_card);
+		card->snd_card = NULL;
+	}
 
 	/* remove and free each DAI */
 	soc_remove_dai_links(card);
@@ -3108,7 +3113,10 @@ static int snd_soc_component_initialize(struct snd_soc_component *component,
 {
 	struct snd_soc_dapm_context *dapm;
 
-	component->name = fmt_single_name(dev, &component->id);
+	if (driver->name)
+		component->name = kstrdup(driver->name, GFP_KERNEL);
+	else
+		component->name = fmt_single_name(dev, &component->id);
 	if (!component->name) {
 		dev_err(dev, "ASoC: Failed to allocate name\n");
 		return -ENOMEM;
@@ -3752,7 +3760,7 @@ EXPORT_SYMBOL_GPL(snd_soc_of_parse_daifmt);
 
 int snd_soc_get_dai_id(struct device_node *ep)
 {
-	struct snd_soc_component *pos;
+	struct snd_soc_component *component;
 	struct device_node *node;
 	int ret;
 
@@ -3766,20 +3774,10 @@ int snd_soc_get_dai_id(struct device_node *ep)
 	 */
 	ret = -ENOTSUPP;
 	mutex_lock(&client_mutex);
-	for_each_component(pos) {
-		struct device_node *component_of_node = pos->dev->of_node;
-
-		if (!component_of_node && pos->dev->parent)
-			component_of_node = pos->dev->parent->of_node;
-
-		if (component_of_node != node)
-			continue;
-
-		if (pos->driver->of_xlate_dai_id)
-			ret = pos->driver->of_xlate_dai_id(pos, ep);
-
-		break;
-	}
+	component = soc_find_component(node, NULL);
+	if (component &&
+	    component->driver->of_xlate_dai_id)
+		ret = component->driver->of_xlate_dai_id(component, ep);
 	mutex_unlock(&client_mutex);
 
 	of_node_put(node);
@@ -3797,9 +3795,7 @@ int snd_soc_get_dai_name(struct of_phandle_args *args,
 
 	mutex_lock(&client_mutex);
 	for_each_component(pos) {
-		component_of_node = pos->dev->of_node;
-		if (!component_of_node && pos->dev->parent)
-			component_of_node = pos->dev->parent->of_node;
+		component_of_node = soc_component_to_node(pos);
 
 		if (component_of_node != args->np)
 			continue;
