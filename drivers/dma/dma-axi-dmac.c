@@ -20,6 +20,7 @@
 #include <linux/of_dma.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/fpga/adi-axi-common.h>
 
 #include <dt-bindings/dma/axi-dmac.h>
 
@@ -71,6 +72,7 @@
 #define AXI_DMAC_IRQ_EOT		BIT(1)
 
 #define AXI_DMAC_FLAG_CYCLIC		BIT(0)
+#define AXI_DMAC_FLAG_LAST		BIT(1)
 
 /* The maximum ID allocated by the hardware is 31 */
 #define AXI_DMAC_SG_UNUSED 32U
@@ -109,7 +111,8 @@ struct axi_dmac_chan {
 	unsigned int dest_type;
 
 	unsigned int max_length;
-	unsigned int align_mask;
+	unsigned int address_align_mask;
+	unsigned int length_align_mask;
 
 	bool hw_cyclic;
 	bool hw_2d;
@@ -168,14 +171,14 @@ static bool axi_dmac_check_len(struct axi_dmac_chan *chan, unsigned int len)
 {
 	if (len == 0)
 		return false;
-	if ((len & chan->align_mask) != 0) /* Not aligned */
+	if ((len & chan->length_align_mask) != 0) /* Not aligned */
 		return false;
 	return true;
 }
 
 static bool axi_dmac_check_addr(struct axi_dmac_chan *chan, dma_addr_t addr)
 {
-	if ((addr & chan->align_mask) != 0) /* Not aligned */
+	if ((addr & chan->address_align_mask) != 0) /* Not aligned */
 		return false;
 	return true;
 }
@@ -216,6 +219,7 @@ static void axi_dmac_start_transfer(struct axi_dmac_chan *chan)
 			desc->num_submitted = 0; /* Start again */
 		else
 			chan->next_desc = NULL;
+		flags |= AXI_DMAC_FLAG_LAST;
 	} else {
 		chan->next_desc = desc;
 	}
@@ -392,7 +396,7 @@ static struct axi_dmac_sg *axi_dmac_fill_linear_sg(struct axi_dmac_chan *chan,
 	num_segments = DIV_ROUND_UP(period_len, chan->max_length);
 	segment_size = DIV_ROUND_UP(period_len, num_segments);
 	/* Take care of alignment */
-	segment_size = ((segment_size - 1) | chan->align_mask) + 1;
+	segment_size = ((segment_size - 1) | chan->length_align_mask) + 1;
 
 	for (i = 0; i < num_periods; i++) {
 		len = period_len;
@@ -562,6 +566,9 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_interleaved(
 		desc->sg[0].y_len = 1;
 	}
 
+	if (flags & DMA_CYCLIC)
+		desc->cyclic = true;
+
 	return vchan_tx_prep(&chan->vchan, &desc->vdesc, flags);
 }
 
@@ -618,7 +625,7 @@ static int axi_dmac_parse_chan_dt(struct device_node *of_chan,
 		return ret;
 	chan->dest_width = val / 8;
 
-	chan->align_mask = max(chan->dest_width, chan->src_width) - 1;
+	chan->address_align_mask = max(chan->dest_width, chan->src_width) - 1;
 
 	if (axi_dmac_dest_is_mem(chan) && axi_dmac_src_is_mem(chan))
 		chan->direction = DMA_MEM_TO_MEM;
@@ -632,9 +639,12 @@ static int axi_dmac_parse_chan_dt(struct device_node *of_chan,
 	return 0;
 }
 
-static void axi_dmac_detect_caps(struct axi_dmac *dmac)
+static int axi_dmac_detect_caps(struct axi_dmac *dmac)
 {
 	struct axi_dmac_chan *chan = &dmac->chan;
+	unsigned int version;
+
+	version = axi_dmac_read(dmac, ADI_AXI_REG_VERSION);
 
 	axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, AXI_DMAC_FLAG_CYCLIC);
 	if (axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS) == AXI_DMAC_FLAG_CYCLIC)
@@ -648,6 +658,32 @@ static void axi_dmac_detect_caps(struct axi_dmac *dmac)
 	chan->max_length = axi_dmac_read(dmac, AXI_DMAC_REG_X_LENGTH);
 	if (chan->max_length != UINT_MAX)
 		chan->max_length++;
+
+	axi_dmac_write(dmac, AXI_DMAC_REG_DEST_ADDRESS, 0xffffffff);
+	if (axi_dmac_read(dmac, AXI_DMAC_REG_DEST_ADDRESS) == 0 &&
+	    chan->dest_type == AXI_DMAC_BUS_TYPE_AXI_MM) {
+		dev_err(dmac->dma_dev.dev,
+			"Destination memory-mapped interface not supported.");
+		return -ENODEV;
+	}
+
+	axi_dmac_write(dmac, AXI_DMAC_REG_SRC_ADDRESS, 0xffffffff);
+	if (axi_dmac_read(dmac, AXI_DMAC_REG_SRC_ADDRESS) == 0 &&
+	    chan->src_type == AXI_DMAC_BUS_TYPE_AXI_MM) {
+		dev_err(dmac->dma_dev.dev,
+			"Source memory-mapped interface not supported.");
+		return -ENODEV;
+	}
+
+	if (version >= ADI_AXI_PCORE_VER(4, 1, 'a')) {
+		axi_dmac_write(dmac, AXI_DMAC_REG_X_LENGTH, 0x00);
+		chan->length_align_mask =
+			axi_dmac_read(dmac, AXI_DMAC_REG_X_LENGTH);
+	} else {
+		chan->length_align_mask = chan->address_align_mask;
+	}
+
+	return 0;
 }
 
 static int axi_dmac_probe(struct platform_device *pdev)
@@ -723,7 +759,11 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	axi_dmac_detect_caps(dmac);
+	ret = axi_dmac_detect_caps(dmac);
+	if (ret)
+		goto err_clk_disable;
+
+	dma_dev->copy_align = (dmac->chan.address_align_mask + 1);
 
 	axi_dmac_write(dmac, AXI_DMAC_REG_IRQ_MASK, 0x00);
 
