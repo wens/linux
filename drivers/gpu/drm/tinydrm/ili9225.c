@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * DRM driver for Ilitek ILI9225 panels
  *
@@ -5,11 +6,6 @@
  *
  * Some code copied from mipi-dbi.c
  * Copyright 2016 Noralf Trønnes
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/delay.h>
@@ -354,8 +350,7 @@ static const struct drm_display_mode ili9225_mode = {
 DEFINE_DRM_GEM_CMA_FOPS(ili9225_fops);
 
 static struct drm_driver ili9225_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.fops			= &ili9225_fops,
 	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * DRM driver for Pervasive Displays RePaper branded e-ink panels
  *
@@ -10,11 +11,6 @@
  *
  * The controller code was taken from the userspace driver:
  * https://github.com/repaper/gratis
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/delay.h>
@@ -929,8 +925,7 @@ static const u8 repaper_e2271cs021_cs[] = { 0x00, 0x00, 0x00, 0x7f,
 DEFINE_DRM_GEM_CMA_FOPS(repaper_fops);
 
 static struct drm_driver repaper_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.fops			= &repaper_fops,
 	.release		= repaper_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
