@@ -61,6 +61,30 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	cvbs-connector {
+		compatible = "composite-video-connector";
+		label = "cvbs";
+
+		port {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/*
+			 * CVBS connector tied to TVOUT3 on SoC,
+			 * which can be driven by either TV encoder
+			 */
+			cvbs_connector_in_tve0: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&tve0_out_cvbs>;
+			};
+
+			cvbs_connector_in_tve1: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&tve1_out_cvbs>;
+			};
+		};
+	};
+
 	hdmi-connector {
 		compatible = "hdmi-connector";
 		type = "a";
@@ -119,6 +143,34 @@
 	spdif_out: spdif-out {
 		#sound-dai-cells = <0>;
 		compatible = "linux,spdif-dit";
+	};
+
+	vga-connector {
+		compatible = "vga-connector";
+		label = "vga";
+		ddc-i2c-bus = <&i2c2>;
+
+		port {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			vga_connector_in_r: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&tve0_out_r>;
+			};
+
+			vga_connector_in_g: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&tve0_out_g>;
+			};
+
+			vga_connector_in_b: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&tve0_out_r>;
+			};
+
+			/* usage of tve0 implies h/v sync from tcon0 */
+		};
 	};
 };
 
@@ -298,6 +350,39 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&spdif_tx_pin>;
 	status = "okay";
+};
+
+&tve0_out {
+	/* endpoint number denotes the TVOUT on the SoC used */
+	tve0_out_g: endpoint@0 {
+		reg = <0>; /* TVOUT 0 */
+		allwinner,tve-source = <4>; /* Y/G */
+		remote-endpoint = <&vga_connector_in_g>;
+	};
+
+	tve0_out_b: endpoint@1 {
+		reg = <1>; /* TVOUT 1 */
+		allwinner,tve-source = <5>; /* U/Pb/B */
+		remote-endpoint = <&vga_connector_in_b>;
+	};
+
+	tve0_out_r: endpoint@2 {
+		reg = <2>; /* TVOUT 2 */
+		allwinner,tve-source = <6>; /* V/Pr/R */
+		remote-endpoint = <&vga_connector_in_r>;
+	};
+
+	tve0_out_composite: endpoint@3 {
+		reg = <3>; /* TVOUT 3 */
+		allwinner,tve-source = <0>; /* CVBS */
+	};
+};
+
+&tve1_out {
+	tve1_out_composite: endpoint@3 {
+		reg = <3>; /* TVOUT 3 */
+		allwinner,tve-source = <0>; /* CVBS */
+	};
 };
 
 &uart0 {
