@@ -135,14 +135,37 @@ The TV Encoder supports the composite and VGA output. It is one end of
 the pipeline.
 
 Required properties:
- - compatible: value should be "allwinner,sun4i-a10-tv-encoder".
+ - compatible: value must be either
+   * allwinner,sun4i-a10-tv-encoder
+   * allwinner,sun5i-a10s-tv-encoder
  - reg: base address and size of memory-mapped region
  - clocks: the clocks driving the TV encoder
- - resets: phandle to the reset controller driving the encoder
+ - ports: A ports node with endpoint definitions as defined in
+	  Documentation/devicetree/bindings/media/video-interfaces.txt.
+	  The first port should be the input endpoint, the second one
+	  the output.
 
-- ports: A ports node with endpoint definitions as defined in
-  Documentation/devicetree/bindings/media/video-interfaces.txt. The
-  first port should be the input endpoint.
+	  For sun4i, each TV encoder has four DACs, with a total of eight
+	  DACs for two TV encoders. The SoC only has four TVOUT pins, and
+	  the DACs can be freely muxed onto any of the pins. To represent
+	  this, the output port of the TV encoder should have endpoints
+	  0 ~ 3, which correspond to the four output pins.
+
+	  Again for sun4i, each DAC has a selection of possible input sources
+	  or output types. This must be described with the following property
+	  in the endpoint node:
+	    - allwinner,tve-source: Must be one of the following values:
+	      - 0: Composite video
+	      - 1: Luma
+	      - 2: Chroma
+	      - 4: Y / Green
+	      - 5: U / Pb / Blue
+	      - 6: V / Pr / Red
+
+	  Whether YUV or RGB applies shall depend on the downstream connector.
+
+Required properties for sun5i-a10s:
+ - resets: phandle to the reset controller driving the encoder
 
 TCON
 ----
@@ -504,7 +527,7 @@ hdmi: hdmi@1c16000 {
 };
 
 tve0: tv-encoder@1c0a000 {
-	compatible = "allwinner,sun4i-a10-tv-encoder";
+	compatible = "allwinner,sun5i-a10s-tv-encoder";
 	reg = <0x01c0a000 0x1000>;
 	clocks = <&ahb_gates 34>;
 	resets = <&tcon_ch0_clk 0>;
@@ -634,4 +657,139 @@ be0: display-backend@1e60000 {
 display-engine {
 	compatible = "allwinner,sun5i-a13-display-engine";
 	allwinner,pipelines = <&fe0>;
+};
+
+Example of two TV encoders:
+
+tve0: tv-encoder@1c0a000 {
+	compatible = "allwinner,sun4i-a10-tv-encoder";
+	reg = <0x01c0a000 0x1000>;
+	clocks = <&ccu CLK_AHB_TVE>;
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+
+			tve0_in_tcon0: endpoint {
+				remote-endpoint = <&tcon0_out_tve0>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* endpoint number denotes the TVOUT on the SoC used */
+			tve0_out_g: endpoint@0 {
+				reg = <0>; /* TVOUT 0 */
+				allwinner,tve-source = <4>; /* Y/G */
+				remote-endpoint = <&vga_connector_in_g>;
+			};
+
+			tve0_out_b: endpoint@1 {
+				reg = <1>; /* TVOUT 1 */
+				allwinner,tve-source = <5>; /* U/Pb/B */
+				remote-endpoint = <&vga_connector_in_b>;
+			};
+
+			tve0_out_r: endpoint@2 {
+				reg = <2>; /* TVOUT 2 */
+				allwinner,tve-source = <6>; /* V/Pr/R */
+				remote-endpoint = <&vga_connector_in_r>;
+			};
+
+			tve0_out_cvbs: endpoint@3 {
+				reg = <3>; /* TVOUT 3 */
+				allwinner,tve-source = <0>; /* CVBS */
+				remote-endpoint = <&cvbs_connector_in_tve0>;
+			};
+		};
+	};
+};
+
+tve1: tv-encoder@1c1b000 {
+	compatible = "allwinner,sun4i-a10-tv-encoder";
+	reg = <0x01c1b000 0x1000>;
+	clocks = <&ccu CLK_AHB_TVE>;
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+
+			tve0_in_tcon0: endpoint {
+				remote-endpoint = <&tcon0_out_tve0>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			tve1_out_cvbs: endpoint@3 {
+				reg = <3>; /* TVOUT 3 */
+				allwinner,tve-source = <0>; /* CVBS */
+				remote-endpoint = <&cvbs_connector_in_tve1>;
+			};
+		};
+	};
+};
+
+cvbs-connector {
+	compatible = "composite-video-connector";
+	label = "cvbs";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/*
+		 * CVBS connector tied to TVOUT3 on SoC,
+		 * which can be driven by either TV encoder
+		 */
+		cvbs_connector_in_tve0: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&tve0_out_cvbs>;
+		};
+
+		cvbs_connector_in_tve1: endpoint@1 {
+			reg = <1>;
+			remote-endpoint = <&tve1_out_cvbs>;
+		};
+	};
+};
+
+vga-connector {
+	compatible = "vga-connector";
+	ddc-i2c-bus = <&i2c2>;
+	label = "vga";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		vga_connector_in_r: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&tve0_out_r>;
+		};
+
+		vga_connector_in_g: endpoint@1 {
+			reg = <1>;
+			remote-endpoint = <&tve0_out_g>;
+		};
+
+		vga_connector_in_b: endpoint@2 {
+			reg = <2>;
+			remote-endpoint = <&tve0_out_r>;
+		};
+
+		/* usage of tve0 implies h/v sync from tcon0 */
+	};
 };
