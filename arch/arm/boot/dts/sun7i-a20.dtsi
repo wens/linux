@@ -376,6 +376,31 @@
 			num-cs = <1>;
 		};
 
+		tve0: tv-encoder@1c0a000 {
+			compatible = "allwinner,sun4i-a10-tv-encoder";
+			reg = <0x01c0a000 0x1000>;
+			clocks = <&ccu CLK_AHB_TVE>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+
+					tve0_in_tcon0: endpoint {
+						remote-endpoint = <&tcon0_out_tve0>;
+					};
+				};
+
+				tve0_out: port@1 {
+					reg = <1>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
+		};
+
 		emac: ethernet@1c0b000 {
 			compatible = "allwinner,sun4i-a10-emac";
 			reg = <0x01c0b000 0x1000>;
@@ -439,6 +464,12 @@
 						remote-endpoint = <&hdmi_in_tcon0>;
 						allwinner,tcon-channel = <1>;
 					};
+
+					tcon0_out_tve0: endpoint@2 {
+						reg = <2>;
+						remote-endpoint = <&tve0_in_tcon0>;
+						allwinner,tcon-channel = <1>;
+					};
 				};
 			};
 		};
@@ -487,6 +518,12 @@
 					tcon1_out_hdmi: endpoint@1 {
 						reg = <1>;
 						remote-endpoint = <&hdmi_in_tcon1>;
+						allwinner,tcon-channel = <1>;
+					};
+
+					tcon0_out_tve0: endpoint@2 {
+						reg = <2>;
+						remote-endpoint = <&tve0_in_tcon0>;
 						allwinner,tcon-channel = <1>;
 					};
 				};
@@ -695,6 +732,31 @@
 			interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&ccu CLK_AHB_SATA>, <&ccu CLK_SATA>;
 			status = "disabled";
+		};
+
+		tve1: tv-encoder@1c1b000 {
+			compatible = "allwinner,sun4i-a10-tv-encoder";
+			reg = <0x01c1b000 0x1000>;
+			clocks = <&ccu CLK_AHB_TVE>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+
+					tve0_in_tcon0: endpoint {
+						remote-endpoint = <&tcon0_out_tve0>;
+					};
+				};
+
+				tve1_out: port@1 {
+					reg = <1>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
 		};
 
 		ehci1: usb@1c1c000 {
