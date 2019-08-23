@@ -5,6 +5,9 @@
  * Copyright (c) 2010 by Mauro Carvalho Chehab
  */
 
+#ifndef _MEDIA_RC_MAP_H
+#define _MEDIA_RC_MAP_H
+
 #include <linux/input.h>
 #include <uapi/linux/lirc.h>
 
@@ -38,22 +41,6 @@
 #define RC_PROTO_BIT_RCMM32		BIT_ULL(RC_PROTO_RCMM32)
 #define RC_PROTO_BIT_XBOX_DVD		BIT_ULL(RC_PROTO_XBOX_DVD)
 
-#define RC_PROTO_BIT_ALL \
-			(RC_PROTO_BIT_UNKNOWN | RC_PROTO_BIT_OTHER | \
-			 RC_PROTO_BIT_RC5 | RC_PROTO_BIT_RC5X_20 | \
-			 RC_PROTO_BIT_RC5_SZ | RC_PROTO_BIT_JVC | \
-			 RC_PROTO_BIT_SONY12 | RC_PROTO_BIT_SONY15 | \
-			 RC_PROTO_BIT_SONY20 | RC_PROTO_BIT_NEC | \
-			 RC_PROTO_BIT_NECX | RC_PROTO_BIT_NEC32 | \
-			 RC_PROTO_BIT_SANYO | \
-			 RC_PROTO_BIT_MCIR2_KBD | RC_PROTO_BIT_MCIR2_MSE | \
-			 RC_PROTO_BIT_RC6_0 | RC_PROTO_BIT_RC6_6A_20 | \
-			 RC_PROTO_BIT_RC6_6A_24 | RC_PROTO_BIT_RC6_6A_32 | \
-			 RC_PROTO_BIT_RC6_MCE | RC_PROTO_BIT_SHARP | \
-			 RC_PROTO_BIT_XMP | RC_PROTO_BIT_CEC | \
-			 RC_PROTO_BIT_IMON | RC_PROTO_BIT_RCMM12 | \
-			 RC_PROTO_BIT_RCMM24 | RC_PROTO_BIT_RCMM32 | \
-			 RC_PROTO_BIT_XBOX_DVD)
 /* All rc protocols for which we have decoders */
 #define RC_PROTO_BIT_ALL_IR_DECODER \
 			(RC_PROTO_BIT_RC5 | RC_PROTO_BIT_RC5X_20 | \
@@ -290,3 +277,5 @@ struct rc_map *rc_map_get(const char *name);
  * Please, do not just append newer Remote Controller names at the end.
  * The names should be ordered in alphabetical order
  */
+
+#endif /* _MEDIA_RC_MAP_H */
