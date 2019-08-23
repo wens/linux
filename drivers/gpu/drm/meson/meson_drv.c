@@ -140,10 +140,28 @@ static struct regmap_config meson_regmap_config = {
 
 static void meson_vpu_init(struct meson_drm *priv)
 {
-	writel_relaxed(0x210000, priv->io_base + _REG(VPU_RDARB_MODE_L1C1));
-	writel_relaxed(0x10000, priv->io_base + _REG(VPU_RDARB_MODE_L1C2));
-	writel_relaxed(0x900000, priv->io_base + _REG(VPU_RDARB_MODE_L2C1));
-	writel_relaxed(0x20000, priv->io_base + _REG(VPU_WRARB_MODE_L2C1));
+	u32 value;
+
+	/*
+	 * Slave dc0 and dc5 connected to master port 1.
+	 * By default other slaves are connected to master port 0.
+	 */
+	value = VPU_RDARB_SLAVE_TO_MASTER_PORT(0, 1) |
+		VPU_RDARB_SLAVE_TO_MASTER_PORT(5, 1);
+	writel_relaxed(value, priv->io_base + _REG(VPU_RDARB_MODE_L1C1));
+
+	/* Slave dc0 connected to master port 1 */
+	value = VPU_RDARB_SLAVE_TO_MASTER_PORT(0, 1);
+	writel_relaxed(value, priv->io_base + _REG(VPU_RDARB_MODE_L1C2));
+
+	/* Slave dc4 and dc7 connected to master port 1 */
+	value = VPU_RDARB_SLAVE_TO_MASTER_PORT(4, 1) |
+		VPU_RDARB_SLAVE_TO_MASTER_PORT(7, 1);
+	writel_relaxed(value, priv->io_base + _REG(VPU_RDARB_MODE_L2C1));
+
+	/* Slave dc1 connected to master port 1 */
+	value = VPU_RDARB_SLAVE_TO_MASTER_PORT(1, 1);
+	writel_relaxed(value, priv->io_base + _REG(VPU_WRARB_MODE_L2C1));
 }
 
 static void meson_remove_framebuffers(void)
@@ -190,6 +208,8 @@ static int meson_drv_bind_master(struct device *dev, bool has_components)
 	drm->dev_private = priv;
 	priv->drm = drm;
 	priv->dev = dev;
+
+	priv->compat = (enum vpu_compatible)of_device_get_match_data(priv->dev);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "vpu");
 	regs = devm_ioremap_resource(dev, res);
@@ -435,10 +455,14 @@ static int meson_drv_probe(struct platform_device *pdev)
 };
 
 static const struct of_device_id dt_match[] = {
-	{ .compatible = "amlogic,meson-gxbb-vpu" },
-	{ .compatible = "amlogic,meson-gxl-vpu" },
-	{ .compatible = "amlogic,meson-gxm-vpu" },
-	{ .compatible = "amlogic,meson-g12a-vpu" },
+	{ .compatible = "amlogic,meson-gxbb-vpu",
+	  .data       = (void *)VPU_COMPATIBLE_GXBB },
+	{ .compatible = "amlogic,meson-gxl-vpu",
+	  .data       = (void *)VPU_COMPATIBLE_GXL },
+	{ .compatible = "amlogic,meson-gxm-vpu",
+	  .data       = (void *)VPU_COMPATIBLE_GXM },
+	{ .compatible = "amlogic,meson-g12a-vpu",
+	  .data       = (void *)VPU_COMPATIBLE_G12A },
 	{}
 };
 MODULE_DEVICE_TABLE(of, dt_match);

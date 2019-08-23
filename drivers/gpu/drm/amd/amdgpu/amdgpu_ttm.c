@@ -227,7 +227,7 @@ static int amdgpu_verify_access(struct ttm_buffer_object *bo, struct file *filp)
 
 	if (amdgpu_ttm_tt_get_usermm(bo->ttm))
 		return -EPERM;
-	return drm_vma_node_verify_access(&abo->gem_base.vma_node,
+	return drm_vma_node_verify_access(&abo->tbo.base.vma_node,
 					  filp->private_data);
 }
 
@@ -303,7 +303,7 @@ int amdgpu_ttm_copy_mem_to_mem(struct amdgpu_device *adev,
 			       struct amdgpu_copy_mem *src,
 			       struct amdgpu_copy_mem *dst,
 			       uint64_t size,
-			       struct reservation_object *resv,
+			       struct dma_resv *resv,
 			       struct dma_fence **f)
 {
 	struct amdgpu_ring *ring = adev->mman.buffer_funcs_ring;
@@ -440,7 +440,7 @@ static int amdgpu_move_blit(struct ttm_buffer_object *bo,
 
 	r = amdgpu_ttm_copy_mem_to_mem(adev, &src, &dst,
 				       new_mem->num_pages << PAGE_SHIFT,
-				       bo->resv, &fence);
+				       bo->base.resv, &fence);
 	if (r)
 		goto error;
 
@@ -1470,7 +1470,7 @@ static bool amdgpu_ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 {
 	unsigned long num_pages = bo->mem.num_pages;
 	struct drm_mm_node *node = bo->mem.mm_node;
-	struct reservation_object_list *flist;
+	struct dma_resv_list *flist;
 	struct dma_fence *f;
 	int i;
 
@@ -1478,18 +1478,18 @@ static bool amdgpu_ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 	 * cleanly handle page faults.
 	 */
 	if (bo->type == ttm_bo_type_kernel &&
-	    !reservation_object_test_signaled_rcu(bo->resv, true))
+	    !dma_resv_test_signaled_rcu(bo->base.resv, true))
 		return false;
 
 	/* If bo is a KFD BO, check if the bo belongs to the current process.
 	 * If true, then return false as any KFD process needs all its BOs to
 	 * be resident to run successfully
 	 */
-	flist = reservation_object_get_list(bo->resv);
+	flist = dma_resv_get_list(bo->base.resv);
 	if (flist) {
 		for (i = 0; i < flist->shared_count; ++i) {
 			f = rcu_dereference_protected(flist->shared[i],
-				reservation_object_held(bo->resv));
+				dma_resv_held(bo->base.resv));
 			if (amdkfd_fence_check_mm(f, current->mm))
 				return false;
 		}
@@ -1992,7 +1992,7 @@ error_free:
 
 int amdgpu_copy_buffer(struct amdgpu_ring *ring, uint64_t src_offset,
 		       uint64_t dst_offset, uint32_t byte_count,
-		       struct reservation_object *resv,
+		       struct dma_resv *resv,
 		       struct dma_fence **fence, bool direct_submit,
 		       bool vm_needs_flush)
 {
@@ -2066,7 +2066,7 @@ error_free:
 
 int amdgpu_fill_buffer(struct amdgpu_bo *bo,
 		       uint32_t src_data,
-		       struct reservation_object *resv,
+		       struct dma_resv *resv,
 		       struct dma_fence **fence)
 {
 	struct amdgpu_device *adev = amdgpu_ttm_adev(bo->tbo.bdev);

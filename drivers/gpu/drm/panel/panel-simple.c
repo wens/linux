@@ -2529,6 +2529,32 @@ static const struct panel_desc samsung_ltn140at29_301 = {
 	},
 };
 
+static const struct drm_display_mode sharp_ld_d5116z01b_mode = {
+	.clock = 168480,
+	.hdisplay = 1920,
+	.hsync_start = 1920 + 48,
+	.hsync_end = 1920 + 48 + 32,
+	.htotal = 1920 + 48 + 32 + 80,
+	.vdisplay = 1280,
+	.vsync_start = 1280 + 3,
+	.vsync_end = 1280 + 3 + 10,
+	.vtotal = 1280 + 3 + 10 + 57,
+	.vrefresh = 60,
+	.flags = DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC,
+};
+
+static const struct panel_desc sharp_ld_d5116z01b = {
+	.modes = &sharp_ld_d5116z01b_mode,
+	.num_modes = 1,
+	.bpc = 8,
+	.size = {
+		.width = 260,
+		.height = 120,
+	},
+	.bus_format = MEDIA_BUS_FMT_RGB888_1X24,
+	.bus_flags = DRM_BUS_FLAG_DATA_MSB_TO_LSB,
+};
+
 static const struct drm_display_mode sharp_lq070y3dg3b_mode = {
 	.clock = 33260,
 	.hdisplay = 800,
@@ -2805,6 +2831,64 @@ static const struct panel_desc tianma_tm070rvhg71 = {
 		.height = 86,
 	},
 	.bus_format = MEDIA_BUS_FMT_RGB888_1X7X4_SPWG,
+};
+
+static const struct drm_display_mode ti_nspire_cx_lcd_mode[] = {
+	{
+		.clock = 10000,
+		.hdisplay = 320,
+		.hsync_start = 320 + 50,
+		.hsync_end = 320 + 50 + 6,
+		.htotal = 320 + 50 + 6 + 38,
+		.vdisplay = 240,
+		.vsync_start = 240 + 3,
+		.vsync_end = 240 + 3 + 1,
+		.vtotal = 240 + 3 + 1 + 17,
+		.vrefresh = 60,
+		.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
+	},
+};
+
+static const struct panel_desc ti_nspire_cx_lcd_panel = {
+	.modes = ti_nspire_cx_lcd_mode,
+	.num_modes = 1,
+	.bpc = 8,
+	.size = {
+		.width = 65,
+		.height = 49,
+	},
+	.bus_format = MEDIA_BUS_FMT_RGB888_1X24,
+	.bus_flags = DRM_BUS_FLAG_PIXDATA_NEGEDGE,
+};
+
+static const struct drm_display_mode ti_nspire_classic_lcd_mode[] = {
+	{
+		.clock = 10000,
+		.hdisplay = 320,
+		.hsync_start = 320 + 6,
+		.hsync_end = 320 + 6 + 6,
+		.htotal = 320 + 6 + 6 + 6,
+		.vdisplay = 240,
+		.vsync_start = 240 + 0,
+		.vsync_end = 240 + 0 + 1,
+		.vtotal = 240 + 0 + 1 + 0,
+		.vrefresh = 60,
+		.flags = DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC,
+	},
+};
+
+static const struct panel_desc ti_nspire_classic_lcd_panel = {
+	.modes = ti_nspire_classic_lcd_mode,
+	.num_modes = 1,
+	/* The grayscale panel has 8 bit for the color .. Y (black) */
+	.bpc = 8,
+	.size = {
+		.width = 71,
+		.height = 53,
+	},
+	/* This is the grayscale bus format */
+	.bus_format = MEDIA_BUS_FMT_Y8_1X8,
+	.bus_flags = DRM_BUS_FLAG_PIXDATA_POSEDGE,
 };
 
 static const struct drm_display_mode toshiba_lt089ac29000_mode = {
@@ -3241,6 +3325,9 @@ static const struct of_device_id platform_of_match[] = {
 		.compatible = "samsung,ltn140at29-301",
 		.data = &samsung_ltn140at29_301,
 	}, {
+		.compatible = "sharp,ld-d5116z01b",
+		.data = &sharp_ld_d5116z01b,
+	}, {
 		.compatible = "sharp,lq035q7db03",
 		.data = &sharp_lq035q7db03,
 	}, {
@@ -3273,6 +3360,12 @@ static const struct of_device_id platform_of_match[] = {
 	}, {
 		.compatible = "tianma,tm070rvhg71",
 		.data = &tianma_tm070rvhg71,
+	}, {
+		.compatible = "ti,nspire-cx-lcd-panel",
+		.data = &ti_nspire_cx_lcd_panel,
+	}, {
+		.compatible = "ti,nspire-classic-lcd-panel",
+		.data = &ti_nspire_classic_lcd_panel,
 	}, {
 		.compatible = "toshiba,lt089ac29000",
 		.data = &toshiba_lt089ac29000,
