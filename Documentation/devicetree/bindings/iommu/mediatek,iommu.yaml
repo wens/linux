@@ -93,7 +93,8 @@ properties:
     maxItems: 1
 
   interrupts:
-    maxItems: 1
+    minItems: 1
+    maxItems: 5
 
   clocks:
     items:
@@ -197,8 +198,23 @@ allOf:
               const: mediatek,mt8195-iommu-infra
 
     then:
+      properties:
+        interrupts:
+          maxItems: 1
+
       required:
         - mediatek,larbs
+
+    else:
+      properties:
+        interrupts:
+          description: The IOMMU has 5 banks. Each bank has its own interrupt.
+          items:
+            - description: The interrupt for IOMMU bank0
+            - description: The interrupt for IOMMU bank1
+            - description: The interrupt for IOMMU bank2
+            - description: The interrupt for IOMMU bank3
+            - description: The interrupt for IOMMU bank4
 
 additionalProperties: false
 
