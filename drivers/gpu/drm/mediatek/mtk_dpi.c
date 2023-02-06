@@ -791,7 +791,7 @@ static int mtk_dpi_bind(struct device *dev, struct device *master, void *data)
 
 	dpi->mmsys_dev = priv->mmsys_dev;
 	ret = drm_simple_encoder_init(drm_dev, &dpi->encoder,
-				      DRM_MODE_ENCODER_TMDS);
+				      DRM_MODE_ENCODER_DPI);
 	if (ret) {
 		dev_err(dev, "Failed to initialize decoder: %d\n", ret);
 		return ret;
