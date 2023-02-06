@@ -352,8 +352,6 @@
 		pinctrl-0 = <&anx7625_pins>;
 		enable-gpios = <&pio 41 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&pio 42 GPIO_ACTIVE_HIGH>;
-		interrupt-parent = <&pio>;
-		interrupts = <6 IRQ_TYPE_LEVEL_LOW>;
 		vdd10-supply = <&pp1000_mipibrdg>;
 		vdd18-supply = <&pp1800_mipibrdg>;
 		vdd33-supply = <&pp3300_mipibrdg>;
