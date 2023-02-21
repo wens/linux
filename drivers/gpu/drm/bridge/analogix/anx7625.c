@@ -1650,7 +1650,8 @@ static int anx7625_get_swing_setting(struct device *dev,
 static int anx7625_parse_dt(struct device *dev,
 			    struct anx7625_platform_data *pdata)
 {
-	struct device_node *np = dev->of_node, *ep0;
+	struct device_node *np = dev->of_node, *ep0, *port_node;
+	struct fwnode_handle *fwnode;
 	int bus_type, mipi_lanes;
 
 	anx7625_get_swing_setting(dev, pdata);
@@ -1688,6 +1689,16 @@ static int anx7625_parse_dt(struct device *dev,
 
 	if (of_property_read_bool(np, "analogix,audio-enable"))
 		pdata->audio_en = 1;
+
+	/*
+	 * Don't bother finding a panel if a Type-C `mode-switch` property is
+	 * present in one of the endpoints in the output port.
+	 */
+	port_node = of_graph_get_port_by_id(np, 1);
+	fwnode_for_each_typec_mode_switch(&port_node->fwnode, fwnode) {
+		fwnode_handle_put(fwnode);
+		return 0;
+	}
 
 	pdata->panel_bridge = devm_drm_of_get_bridge(dev, np, 1, 0);
 	if (IS_ERR(pdata->panel_bridge)) {
