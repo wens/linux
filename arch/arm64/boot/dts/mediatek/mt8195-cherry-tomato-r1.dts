@@ -20,6 +20,13 @@
 	model = "mt8195_r1019_5682";
 };
 
+&pcie0 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_pins_default>;
+};
+
 &ts_10 {
 	status = "okay";
 };
