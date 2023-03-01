@@ -53,7 +53,6 @@
 #include "link_encoder.h"
 #include "link_enc_cfg.h"
 
-#include "dc_link.h"
 #include "link.h"
 #include "dm_helpers.h"
 #include "mem_input.h"
@@ -73,6 +72,8 @@
 #include "dce/dmub_hw_lock_mgr.h"
 
 #include "dc_trace.h"
+
+#include "hw_sequencer_private.h"
 
 #include "dce/dmub_outbox.h"
 
@@ -398,6 +399,13 @@ bool dc_stream_adjust_vmin_vmax(struct dc *dc,
 		struct dc_crtc_timing_adjust *adjust)
 {
 	int i;
+
+	/*
+	 * Don't adjust DRR while there's bandwidth optimizations pending to
+	 * avoid conflicting with firmware updates.
+	 */
+	if (dc->optimized_required || dc->wm_optimized_required)
+		return false;
 
 	stream->adjust.v_total_max = adjust->v_total_max;
 	stream->adjust.v_total_mid = adjust->v_total_mid;
@@ -1057,6 +1065,45 @@ static void apply_ctx_interdependent_lock(struct dc *dc, struct dc_state *contex
 	}
 }
 
+static void phantom_pipe_blank(
+		struct dc *dc,
+		struct timing_generator *tg,
+		int width,
+		int height)
+{
+	struct dce_hwseq *hws = dc->hwseq;
+	enum dc_color_space color_space;
+	struct tg_color black_color = {0};
+	struct output_pixel_processor *opp = NULL;
+	uint32_t num_opps, opp_id_src0, opp_id_src1;
+	uint32_t otg_active_width, otg_active_height;
+
+	/* program opp dpg blank color */
+	color_space = COLOR_SPACE_SRGB;
+	color_space_to_black_color(dc, color_space, &black_color);
+
+	otg_active_width = width;
+	otg_active_height = height;
+
+	/* get the OPTC source */
+	tg->funcs->get_optc_source(tg, &num_opps, &opp_id_src0, &opp_id_src1);
+	ASSERT(opp_id_src0 < dc->res_pool->res_cap->num_opp);
+	opp = dc->res_pool->opps[opp_id_src0];
+
+	opp->funcs->opp_set_disp_pattern_generator(
+			opp,
+			CONTROLLER_DP_TEST_PATTERN_SOLID_COLOR,
+			CONTROLLER_DP_COLOR_SPACE_UDEFINED,
+			COLOR_DEPTH_UNDEFINED,
+			&black_color,
+			otg_active_width,
+			otg_active_height,
+			0);
+
+	if (tg->funcs->is_tg_enabled(tg))
+		hws->funcs.wait_for_blank_complete(opp);
+}
+
 static void disable_dangling_plane(struct dc *dc, struct dc_state *context)
 {
 	int i, j;
@@ -1115,8 +1162,14 @@ static void disable_dangling_plane(struct dc *dc, struct dc_state *context)
 			 * again for different use.
 			 */
 			if (old_stream->mall_stream_config.type == SUBVP_PHANTOM) {
-				if (tg->funcs->enable_crtc)
+				if (tg->funcs->enable_crtc) {
+					int main_pipe_width, main_pipe_height;
+
+					main_pipe_width = old_stream->mall_stream_config.paired_stream->dst.width;
+					main_pipe_height = old_stream->mall_stream_config.paired_stream->dst.height;
+					phantom_pipe_blank(dc, tg, main_pipe_width, main_pipe_height);
 					tg->funcs->enable_crtc(tg);
+				}
 			}
 			dc_rem_all_planes_for_stream(dc, old_stream, dangling_context);
 			disable_all_writeback_pipes_for_stream(dc, old_stream, dangling_context);
@@ -1298,7 +1351,7 @@ static void detect_edp_presence(struct dc *dc)
 	int i;
 	int edp_num;
 
-	get_edp_links(dc, edp_links, &edp_num);
+	dc_get_edp_links(dc, edp_links, &edp_num);
 	if (!edp_num)
 		return;
 
@@ -2134,27 +2187,33 @@ void dc_post_update_surfaces_to_stream(struct dc *dc)
 
 	post_surface_trace(dc);
 
-	if (dc->ctx->dce_version >= DCE_VERSION_MAX)
-		TRACE_DCN_CLOCK_STATE(&context->bw_ctx.bw.dcn.clk);
-	else
+	/*
+	 * Only relevant for DCN behavior where we can guarantee the optimization
+	 * is safe to apply - retain the legacy behavior for DCE.
+	 */
+
+	if (dc->ctx->dce_version < DCE_VERSION_MAX)
 		TRACE_DCE_CLOCK_STATE(&context->bw_ctx.bw.dce);
+	else {
+		TRACE_DCN_CLOCK_STATE(&context->bw_ctx.bw.dcn.clk);
 
-	if (is_flip_pending_in_pipes(dc, context))
-		return;
+		if (is_flip_pending_in_pipes(dc, context))
+			return;
 
-	for (i = 0; i < dc->res_pool->pipe_count; i++)
-		if (context->res_ctx.pipe_ctx[i].stream == NULL ||
-		    context->res_ctx.pipe_ctx[i].plane_state == NULL) {
-			context->res_ctx.pipe_ctx[i].pipe_idx = i;
-			dc->hwss.disable_plane(dc, &context->res_ctx.pipe_ctx[i]);
-		}
+		for (i = 0; i < dc->res_pool->pipe_count; i++)
+			if (context->res_ctx.pipe_ctx[i].stream == NULL ||
+					context->res_ctx.pipe_ctx[i].plane_state == NULL) {
+				context->res_ctx.pipe_ctx[i].pipe_idx = i;
+				dc->hwss.disable_plane(dc, &context->res_ctx.pipe_ctx[i]);
+			}
 
-	process_deferred_updates(dc);
+		process_deferred_updates(dc);
 
-	dc->hwss.optimize_bandwidth(dc, context);
+		dc->hwss.optimize_bandwidth(dc, context);
 
-	if (dc->debug.enable_double_buffered_dsc_pg_support)
-		dc->hwss.update_dsc_pg(dc, context, true);
+		if (dc->debug.enable_double_buffered_dsc_pg_support)
+			dc->hwss.update_dsc_pg(dc, context, true);
+	}
 
 	dc->optimized_required = false;
 	dc->wm_optimized_required = false;
@@ -4083,23 +4142,29 @@ void dc_commit_updates_for_stream(struct dc *dc,
 	struct dc_context *dc_ctx = dc->ctx;
 	int i, j;
 
+	stream_status = dc_stream_get_status(stream);
+	context = dc->current_state;
+
+	update_type = dc_check_update_surfaces_for_stream(
+				dc, srf_updates, surface_count, stream_update, stream_status);
+
 	/* TODO: Since change commit sequence can have a huge impact,
 	 * we decided to only enable it for DCN3x. However, as soon as
 	 * we get more confident about this change we'll need to enable
 	 * the new sequence for all ASICs.
 	 */
 	if (dc->ctx->dce_version >= DCN_VERSION_3_2) {
+		/*
+		 * Previous frame finished and HW is ready for optimization.
+		 */
+		if (update_type == UPDATE_TYPE_FAST)
+			dc_post_update_surfaces_to_stream(dc);
+
 		dc_update_planes_and_stream(dc, srf_updates,
 					    surface_count, stream,
 					    stream_update);
 		return;
 	}
-
-	stream_status = dc_stream_get_status(stream);
-	context = dc->current_state;
-
-	update_type = dc_check_update_surfaces_for_stream(
-				dc, srf_updates, surface_count, stream_update, stream_status);
 
 	if (update_type >= update_surface_trace_level)
 		update_surface_trace(dc, srf_updates, surface_count);
@@ -4123,12 +4188,9 @@ void dc_commit_updates_for_stream(struct dc *dc,
 			if (new_pipe->plane_state && new_pipe->plane_state != old_pipe->plane_state)
 				new_pipe->plane_state->force_full_update = true;
 		}
-	} else if (update_type == UPDATE_TYPE_FAST && dc_ctx->dce_version >= DCE_VERSION_MAX) {
+	} else if (update_type == UPDATE_TYPE_FAST) {
 		/*
 		 * Previous frame finished and HW is ready for optimization.
-		 *
-		 * Only relevant for DCN behavior where we can guarantee the optimization
-		 * is safe to apply - retain the legacy behavior for DCE.
 		 */
 		dc_post_update_surfaces_to_stream(dc);
 	}
@@ -4315,157 +4377,6 @@ bool dc_is_dmcu_initialized(struct dc *dc)
 	if (dmcu)
 		return dmcu->funcs->is_dmcu_initialized(dmcu);
 	return false;
-}
-
-bool dc_is_oem_i2c_device_present(
-	struct dc *dc,
-	size_t slave_address)
-{
-	if (dc->res_pool->oem_device)
-		return dce_i2c_oem_device_present(
-			dc->res_pool,
-			dc->res_pool->oem_device,
-			slave_address);
-
-	return false;
-}
-
-bool dc_submit_i2c(
-		struct dc *dc,
-		uint32_t link_index,
-		struct i2c_command *cmd)
-{
-
-	struct dc_link *link = dc->links[link_index];
-	struct ddc_service *ddc = link->ddc;
-	return dce_i2c_submit_command(
-		dc->res_pool,
-		ddc->ddc_pin,
-		cmd);
-}
-
-bool dc_submit_i2c_oem(
-		struct dc *dc,
-		struct i2c_command *cmd)
-{
-	struct ddc_service *ddc = dc->res_pool->oem_device;
-	if (ddc)
-		return dce_i2c_submit_command(
-			dc->res_pool,
-			ddc->ddc_pin,
-			cmd);
-
-	return false;
-}
-
-static bool link_add_remote_sink_helper(struct dc_link *dc_link, struct dc_sink *sink)
-{
-	if (dc_link->sink_count >= MAX_SINKS_PER_LINK) {
-		BREAK_TO_DEBUGGER();
-		return false;
-	}
-
-	dc_sink_retain(sink);
-
-	dc_link->remote_sinks[dc_link->sink_count] = sink;
-	dc_link->sink_count++;
-
-	return true;
-}
-
-/*
- * dc_link_add_remote_sink() - Create a sink and attach it to an existing link
- *
- * EDID length is in bytes
- */
-struct dc_sink *dc_link_add_remote_sink(
-		struct dc_link *link,
-		const uint8_t *edid,
-		int len,
-		struct dc_sink_init_data *init_data)
-{
-	struct dc_sink *dc_sink;
-	enum dc_edid_status edid_status;
-
-	if (len > DC_MAX_EDID_BUFFER_SIZE) {
-		dm_error("Max EDID buffer size breached!\n");
-		return NULL;
-	}
-
-	if (!init_data) {
-		BREAK_TO_DEBUGGER();
-		return NULL;
-	}
-
-	if (!init_data->link) {
-		BREAK_TO_DEBUGGER();
-		return NULL;
-	}
-
-	dc_sink = dc_sink_create(init_data);
-
-	if (!dc_sink)
-		return NULL;
-
-	memmove(dc_sink->dc_edid.raw_edid, edid, len);
-	dc_sink->dc_edid.length = len;
-
-	if (!link_add_remote_sink_helper(
-			link,
-			dc_sink))
-		goto fail_add_sink;
-
-	edid_status = dm_helpers_parse_edid_caps(
-			link,
-			&dc_sink->dc_edid,
-			&dc_sink->edid_caps);
-
-	/*
-	 * Treat device as no EDID device if EDID
-	 * parsing fails
-	 */
-	if (edid_status != EDID_OK && edid_status != EDID_PARTIAL_VALID) {
-		dc_sink->dc_edid.length = 0;
-		dm_error("Bad EDID, status%d!\n", edid_status);
-	}
-
-	return dc_sink;
-
-fail_add_sink:
-	dc_sink_release(dc_sink);
-	return NULL;
-}
-
-/*
- * dc_link_remove_remote_sink() - Remove a remote sink from a dc_link
- *
- * Note that this just removes the struct dc_sink - it doesn't
- * program hardware or alter other members of dc_link
- */
-void dc_link_remove_remote_sink(struct dc_link *link, struct dc_sink *sink)
-{
-	int i;
-
-	if (!link->sink_count) {
-		BREAK_TO_DEBUGGER();
-		return;
-	}
-
-	for (i = 0; i < link->sink_count; i++) {
-		if (link->remote_sinks[i] == sink) {
-			dc_sink_release(sink);
-			link->remote_sinks[i] = NULL;
-
-			/* shrink array to remove empty place */
-			while (i < link->sink_count - 1) {
-				link->remote_sinks[i] = link->remote_sinks[i+1];
-				i++;
-			}
-			link->remote_sinks[i] = NULL;
-			link->sink_count--;
-			return;
-		}
-	}
 }
 
 void get_clock_requirements_for_state(struct dc_state *state, struct AsicStateEx *info)
@@ -4990,7 +4901,7 @@ void dc_notify_vsync_int_state(struct dc *dc, struct dc_stream_state *stream, bo
 		return;
 	}
 
-	get_edp_links(dc, edp_links, &edp_num);
+	dc_get_edp_links(dc, edp_links, &edp_num);
 
 	/* Determine panel inst */
 	for (i = 0; i < edp_num; i++) {

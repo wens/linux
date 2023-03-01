@@ -46,6 +46,7 @@
 #include "protocols/link_dp_capability.h"
 #include "protocols/link_dp_training.h"
 #include "protocols/link_edp_panel_control.h"
+#include "protocols/link_dp_dpia_bw.h"
 
 #include "dm_helpers.h"
 #include "link_enc_cfg.h"
@@ -1153,7 +1154,7 @@ static bool poll_for_allocation_change_trigger(struct dc_link *link)
 			break;
 		}
 
-		msleep(5);
+		fsleep(5000);
 	}
 
 	if (result == ACT_FAILED) {
@@ -1640,7 +1641,7 @@ static bool write_128b_132b_sst_payload_allocation_table(
 			}
 		}
 		retries++;
-		msleep(5);
+		fsleep(5000);
 	}
 
 	if (!result && retries == max_retries) {
@@ -2044,11 +2045,17 @@ static enum dc_status enable_link_dp(struct dc_state *state,
 		}
 	}
 
-	/* Train with fallback when enabling DPIA link. Conventional links are
+	/*
+	 * If the link is DP-over-USB4 do the following:
+	 * - Train with fallback when enabling DPIA link. Conventional links are
 	 * trained with fallback during sink detection.
+	 * - Allocate only what the stream needs for bw in Gbps. Inform the CM
+	 * in case stream needs more or less bw from what has been allocated
+	 * earlier at plug time.
 	 */
-	if (link->ep_type == DISPLAY_ENDPOINT_USB4_DPIA)
+	if (link->ep_type == DISPLAY_ENDPOINT_USB4_DPIA) {
 		do_fallback = true;
+	}
 
 	/*
 	 * Temporary w/a to get DP2.0 link rates to work with SST.
